@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>習慣</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="習慣">
+<meta name="theme-color" content="#16140f">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#f3efe6; --card:#fffdf8; --ink:#1d1b17; --sub:#7a7468; --line:#e2dccf;
+  --ok:#2f7d4f; --okbg:#dff0e3; --ng:#b33a2c; --ngbg:#f8e0db; --warn:#9a5b00; --warnbg:#fbe9c8; --if:#4a5f8a;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#16140f; --card:#211e18; --ink:#f2ede2; --sub:#9b9486; --line:#353026;
+    --ok:#6fcf8f; --okbg:#1f3a28; --ng:#ff8a7a; --ngbg:#43201b; --warn:#ffc266; --warnbg:#3d2e12; --if:#9db4e6;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#16140f; --card:#211e18; --ink:#f2ede2; --sub:#9b9486; --line:#353026;
+  --ok:#6fcf8f; --okbg:#1f3a28; --ng:#ff8a7a; --ngbg:#43201b; --warn:#ffc266; --warnbg:#3d2e12; --if:#9db4e6;
+}
+*,*::before,*::after{box-sizing:inherit}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font-family:"Zen Kaku Gothic New","Hiragino Sans","Noto Sans JP","Yu Gothic",sans-serif;
+  -webkit-tap-highlight-color:transparent}
+main{max-width:460px;margin:0 auto;padding:20px 16px 40px}
+.day{display:flex;align-items:baseline;justify-content:space-between;margin:4px 2px 14px}
+.day h1{font-size:30px;font-weight:900;margin:0;letter-spacing:.02em}
+.switch{display:flex;background:var(--card);border:1px solid var(--line);border-radius:999px;padding:3px}
+.switch button{border:0;background:none;color:var(--sub);font:inherit;font-size:14px;padding:7px 14px;border-radius:999px}
+.switch button.on{background:var(--ink);color:var(--bg);font-weight:700}
+.warn{background:var(--warnbg);color:var(--warn);border-radius:14px;padding:12px 14px;margin-bottom:12px;font-weight:700;font-size:15px;line-height:1.5}
+.item{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:14px;margin-bottom:10px}
+.row{display:flex;align-items:center;gap:10px}
+.name{flex:1;min-width:0}
+.name b{font-size:19px;display:block}
+.ift{font-size:13px;line-height:1.55;margin-top:4px;color:var(--sub)}
+.ift .k{color:var(--if);font-weight:700;margin-right:4px}
+.freq{font-size:11px;border:1px solid var(--line);border-radius:6px;padding:1px 6px;margin-left:6px;color:var(--sub);font-weight:400;vertical-align:2px}
+.btn{width:58px;height:54px;border-radius:14px;border:2px solid var(--line);background:transparent;
+  font:inherit;font-size:26px;font-weight:900;color:var(--sub);flex:none}
+.btn.ok.on{background:var(--okbg);border-color:var(--ok);color:var(--ok)}
+.btn.ng.on{background:var(--ngbg);border-color:var(--ng);color:var(--ng)}
+.note{width:100%;margin-top:10px;padding:10px 12px;border-radius:10px;border:1px solid var(--line);
+  background:var(--bg);color:var(--ink);font:inherit;font-size:16px}
+.last{font-size:12px;color:var(--sub);margin-top:6px}
+.last.late{color:var(--warn);font-weight:700}
+h2{font-size:15px;color:var(--sub);font-weight:700;margin:26px 2px 10px}
+.grid-wrap{overflow-x:auto;background:var(--card);border:1px solid var(--line);border-radius:18px;padding:12px}
+table{border-collapse:collapse;font-size:13px;width:100%}
+th,td{text-align:center;padding:5px 3px;white-space:nowrap}
+th{color:var(--sub);font-weight:400}
+td.l{text-align:left;font-weight:700;padding-right:8px}
+.dot{display:inline-block;width:18px;height:18px;border-radius:6px;background:var(--line)}
+.dot.o{background:var(--ok)} .dot.x{background:var(--ng)}
+.status{font-size:12px;color:var(--sub);text-align:center;margin-top:18px}
+.edit-open{width:100%;margin-top:6px;padding:13px;border-radius:14px;border:1px dashed var(--line);background:none;color:var(--sub);font:inherit;font-size:15px}
+.ed{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:14px;margin-bottom:10px}
+.ed label{display:block;font-size:12px;color:var(--sub);margin:8px 0 3px}
+.ed input,.ed select{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font:inherit;font-size:16px}
+.ed .del{margin-top:10px;background:none;border:0;color:var(--ng);font:inherit;font-size:14px;padding:4px 0}
+.bar{display:flex;gap:10px;margin-top:6px}
+.bar button{flex:1;padding:13px;border-radius:14px;font:inherit;font-size:15px;font-weight:700;border:1px solid var(--line);background:var(--card);color:var(--ink)}
+.bar .primary{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+</style>
+</head>
+<body>
+<main>
+  <div id="view">
+    <div class="day">
+      <h1 id="dateLabel">—</h1>
+      <div class="switch">
+        <button id="tYest">昨日</button>
+        <button id="tToday" class="on">今日</button>
+      </div>
+    </div>
+    <div id="warn"></div>
+    <div id="items"></div>
+    <button class="edit-open" id="openEdit">IF-THENを編集する</button>
+    <h2>直近14日</h2>
+    <div class="grid-wrap"><table id="grid"></table></div>
+  </div>
+  <div id="editor" hidden>
+    <div class="day"><h1>IF-THEN</h1></div>
+    <div id="edList"></div>
+    <div class="bar"><button id="addItem">＋ 追加</button></div>
+    <div class="bar"><button id="cancelEdit">やめる</button><button class="primary" id="saveEdit">保存</button></div>
+  </div>
+  <div class="status" id="status">読み込み中…</div>
+</main>
+
+<script src="config.js"></script>
+<script>
+const DEFAULT_ITEMS = [
+  {id:"g", name:"声門閉鎖", ifText:"歌の練習を始めたら", thenText:"最初の10分は声門閉鎖", freq:"daily"},
+  {id:"r", name:"リール", ifText:"", thenText:"リールを1本撮る", freq:"daily"},
+  {id:"m", name:"薬", ifText:"寝る前に洗顔したら", thenText:"薬を塗る", freq:"daily"},
+  {id:"p", name:"写真", ifText:"薬を塗ったら", thenText:"肌の写真を1枚撮る", freq:"weekly"}
+];
+let items = DEFAULT_ITEMS.map(x=>({...x}));
+let days = {};      // {"2026-10-07": {g:"o", r:"x", n_g:"メモ", ...}}
+let offset = 0;
+let draft = null;
+const CFG = window.HABIT_CONFIG || {};
+const ONLINE = !!(CFG.API_URL && CFG.KEY);
+const pending = {};  // "date|id" -> true
+let saveTimer = null;
+
+const pad = n => String(n).padStart(2,"0");
+const keyOf = d => d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());
+const dayAt = off => { const d = new Date(); d.setHours(12,0,0,0); d.setDate(d.getDate()+off); return d; };
+const WD = ["日","月","火","水","木","金","土"];
+const $ = id => document.getElementById(id);
+const st = t => { $("status").textContent = t; };
+
+function el(tag, cls, text){ const e=document.createElement(tag); if(cls) e.className=cls; if(text!=null) e.textContent=text; return e; }
+
+function render(){
+  const d = dayAt(offset), k = keyOf(d);
+  $("dateLabel").textContent = (d.getMonth()+1)+"/"+d.getDate()+"（"+WD[d.getDay()]+"）";
+  $("tToday").classList.toggle("on", offset===0);
+  $("tYest").classList.toggle("on", offset===-1);
+  const rec = days[k] || {};
+  const box = $("items"); box.innerHTML = "";
+  items.forEach(it => {
+    const card = el("div","item");
+    const row = el("div","row");
+    const nm = el("div","name");
+    const b = el("b", null, it.name || "（名前なし）");
+    if(it.freq==="weekly") b.appendChild(el("span","freq","週1"));
+    nm.appendChild(b);
+    const ift = el("div","ift");
+    const l1 = el("div"); l1.appendChild(el("span","k","IF")); l1.appendChild(document.createTextNode(it.ifText || "（未設定）"));
+    const l2 = el("div"); l2.appendChild(el("span","k","THEN")); l2.appendChild(document.createTextNode(it.thenText || "（未設定）"));
+    ift.appendChild(l1); ift.appendChild(l2); nm.appendChild(ift);
+    row.appendChild(nm);
+    const ok = el("button","btn ok"+(rec[it.id]==="o"?" on":""),"○");
+    const ng = el("button","btn ng"+(rec[it.id]==="x"?" on":""),"×");
+    ok.onclick = () => setMark(k,it.id,"o");
+    ng.onclick = () => setMark(k,it.id,"x");
+    row.appendChild(ok); row.appendChild(ng);
+    card.appendChild(row);
+    if(it.freq==="weekly"){
+      const ld = lastDone(it.id);
+      const lt = el("div","last");
+      if(ld===null){ lt.textContent = "まだ1回も記録なし"; lt.classList.add("late"); }
+      else { lt.textContent = "前回："+ld.label+"（"+ld.ago+"日前）"; if(ld.ago>=7) lt.classList.add("late"); }
+      card.appendChild(lt);
+    }
+    const note = el("input","note");
+    note.type="text"; note.placeholder="一言メモ";
+    note.value = rec["n_"+it.id] || "";
+    note.oninput = () => { days[k] = {...(days[k]||{}), ["n_"+it.id]: note.value}; queueSave(k, it.id); };
+    card.appendChild(note);
+    box.appendChild(card);
+  });
+  renderWarn(); renderGrid();
+}
+
+function setMark(k, id, v){
+  const rec = {...(days[k]||{})};
+  if(rec[id]===v) delete rec[id]; else rec[id]=v;
+  days[k]=rec; render(); queueSave(k, id);
+}
+function lastDone(id){
+  for(let off=0; off>-120; off--){
+    const r = days[keyOf(dayAt(off))];
+    if(r && r[id]==="o"){ const d=dayAt(off); return {label:(d.getMonth()+1)+"/"+d.getDate(), ago:-off}; }
+  }
+  return null;
+}
+function streakX(id){
+  let n=0;
+  for(let off=0; off>-60; off--){
+    const r = days[keyOf(dayAt(off))];
+    if(off===0 && !(r && r[id])) continue;
+    if(r && r[id]==="x") n++; else break;
+  }
+  return n;
+}
+function renderWarn(){
+  const msgs = [];
+  items.forEach(it=>{
+    if(it.freq==="daily"){ const s=streakX(it.id); if(s>=3) msgs.push(it.name+"が"+s+"日続けて×"); }
+  });
+  const w=$("warn"); w.innerHTML="";
+  if(msgs.length){ w.appendChild(el("div","warn", msgs.join("、")+"。何が重い？ その項目のメモに書いて。")); }
+}
+function renderGrid(){
+  const t=$("grid"); t.innerHTML="";
+  const offs=[]; for(let o=-13;o<=0;o++) offs.push(o);
+  const hr=el("tr"); hr.appendChild(el("th"));
+  offs.forEach(o=>hr.appendChild(el("th",null,String(dayAt(o).getDate()))));
+  t.appendChild(hr);
+  items.forEach(it=>{
+    const tr=el("tr"); tr.appendChild(el("td","l",it.name));
+    offs.forEach(o=>{ const r=days[keyOf(dayAt(o))]||{}; const td=el("td"); td.appendChild(el("span","dot "+(r[it.id]||""))); tr.appendChild(td); });
+    t.appendChild(tr);
+  });
+}
+
+/* ---------- 編集 ---------- */
+function openEditor(){
+  draft = items.map(x=>({...x}));
+  $("view").hidden = true; $("editor").hidden = false;
+  renderEditor(); window.scrollTo(0,0);
+}
+function renderEditor(){
+  const box=$("edList"); box.innerHTML="";
+  draft.forEach((it,i)=>{
+    const c=el("div","ed");
+    const field=(label,key,ph)=>{
+      c.appendChild(el("label",null,label));
+      const inp=el("input"); inp.type="text"; inp.placeholder=ph; inp.value=it[key]||"";
+      inp.oninput=()=>{ it[key]=inp.value; }; c.appendChild(inp);
+    };
+    field("名前","name","例：声門閉鎖");
+    field("IF（いつ・何をしたら）","ifText","例：歌の練習を始めたら");
+    field("THEN（やること）","thenText","例：最初の10分は声門閉鎖");
+    c.appendChild(el("label",null,"頻度"));
+    const sel=el("select");
+    [["daily","毎日"],["weekly","週1"]].forEach(([v,t])=>{ const o=el("option",null,t); o.value=v; if(it.freq===v) o.selected=true; sel.appendChild(o); });
+    sel.onchange=()=>{ it.freq=sel.value; }; c.appendChild(sel);
+    const del=el("button","del","この項目を消す");
+    del.onclick=()=>{ draft.splice(i,1); renderEditor(); }; c.appendChild(del);
+    box.appendChild(c);
+  });
+}
+$("addItem").onclick=()=>{ draft.push({id:"h"+Date.now().toString(36), name:"", ifText:"", thenText:"", freq:"daily"}); renderEditor(); };
+$("cancelEdit").onclick=()=>{ draft=null; $("editor").hidden=true; $("view").hidden=false; };
+$("saveEdit").onclick=async()=>{
+  items = draft.filter(x=>(x.name||x.ifText||x.thenText)); draft=null;
+  $("editor").hidden=true; $("view").hidden=false; render();
+  try{ localStorage.setItem("habit-items", JSON.stringify(items)); }catch(e){}
+  if(ONLINE){ try{ await api({action:"saveItems", items}); st("保存済み"); }catch(e){ st("設定を保存できませんでした（圏外？）"); } }
+};
+$("openEdit").onclick=openEditor;
+
+/* ---------- 保存（Googleスプレッドシート） ---------- */
+async function api(body){
+  const res = await fetch(CFG.API_URL, {method:"POST", body: JSON.stringify({...body, key: CFG.KEY})});
+  const j = await res.json();
+  if(!j.ok) throw new Error(j.error||"error");
+  return j;
+}
+function cache(){
+  try{ localStorage.setItem("habit-days", JSON.stringify(days)); localStorage.setItem("habit-pending", JSON.stringify(pending)); }catch(e){}
+}
+function queueSave(k, id){
+  pending[k+"|"+id] = true; cache();
+  clearTimeout(saveTimer); saveTimer = setTimeout(flush, 700);
+}
+async function flush(){
+  if(!ONLINE){ st("この端末にだけ保存中（config.js未設定）"); return; }
+  const keys = Object.keys(pending);
+  if(!keys.length) return;
+  st("保存中…");
+  for(const pk of keys){
+    const [date, id] = pk.split("|");
+    const r = days[date] || {};
+    const it = items.find(x=>x.id===id) || {name:""};
+    try{
+      await api({action:"upsert", date, id, name: it.name, mark: r[id]||"", note: r["n_"+id]||""});
+      delete pending[pk]; cache();
+    }catch(e){ st("未送信あり（電波が戻ったら自動で送る）"); setTimeout(flush, 15000); return; }
+  }
+  st("保存済み");
+}
+
+$("tToday").onclick=()=>{ offset=0; render(); };
+$("tYest").onclick=()=>{ offset=-1; render(); };
+window.addEventListener("online", flush);
+document.addEventListener("visibilitychange", ()=>{ if(document.visibilityState==="visible") flush(); });
+
+try{ const s=localStorage.getItem("habit-days"); if(s) days=JSON.parse(s)||{}; }catch(e){}
+try{ const s=localStorage.getItem("habit-pending"); if(s) Object.assign(pending, JSON.parse(s)||{}); }catch(e){}
+try{ const s=localStorage.getItem("habit-items"); if(s){ const v=JSON.parse(s); if(Array.isArray(v)&&v.length) items=v; } }catch(e){}
+render();
+
+if("serviceWorker" in navigator){ navigator.serviceWorker.register("sw.js").catch(()=>{}); }
+
+(async()=>{
+  if(!ONLINE){ st("この端末にだけ保存中（config.js未設定）"); return; }
+  try{
+    const since = keyOf(dayAt(-120));
+    const url = CFG.API_URL + "?action=load&key=" + encodeURIComponent(CFG.KEY) + "&since=" + since;
+    const j = await (await fetch(url)).json();
+    if(!j.ok) throw new Error(j.error);
+    const remote = {};
+    (j.records||[]).forEach(r=>{
+      remote[r.date] = remote[r.date] || {};
+      if(r.mark) remote[r.date][r.id] = r.mark;
+      if(r.note) remote[r.date]["n_"+r.id] = r.note;
+    });
+    // 未送信の分だけ端末の値を優先し、それ以外はシートの値に合わせる
+    const merged = remote;
+    Object.keys(pending).forEach(pk=>{
+      const [d,id] = pk.split("|"); const loc = days[d]||{};
+      merged[d] = merged[d]||{};
+      if(loc[id]) merged[d][id]=loc[id]; else delete merged[d][id];
+      if(loc["n_"+id]) merged[d]["n_"+id]=loc["n_"+id]; else delete merged[d]["n_"+id];
+    });
+    days = merged;
+    if(Array.isArray(j.items) && j.items.length){ items = j.items; localStorage.setItem("habit-items", JSON.stringify(items)); }
+    else { await api({action:"saveItems", items}); }
+    cache();
+    if(!draft) render();
+    st("同期済み");
+    flush();
+  }catch(e){ st("同期できませんでした（圏外？）"); }
+})();
+</script>
+</body>
+</html>
