@@ -3,63 +3,186 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>習慣</title>
+<title>毎日</title>
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="習慣">
+<meta name="apple-mobile-web-app-title" content="毎日">
 <meta name="theme-color" content="#16140f">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;700;900&display=swap" rel="stylesheet">
 <style>
 :root{
-  --bg:#f3efe6; --card:#fffdf8; --ink:#1d1b17; --sub:#7a7468; --line:#e2dccf;
+  --bg:#f3efe6; --card:#fffdf8; --ink:#1d1b17; --sub:#7a7468; --line:#e2dccf; --soft:#ebe5d8;
   --ok:#2f7d4f; --okbg:#dff0e3; --ng:#b33a2c; --ngbg:#f8e0db; --warn:#9a5b00; --warnbg:#fbe9c8; --if:#4a5f8a;
+  --acc:#2563c9; --star:#c98a00; --now:#d93025;
   box-sizing:border-box;
   padding-top:env(safe-area-inset-top,0px);
-  padding-bottom:env(safe-area-inset-bottom,0px);
 }
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
-    --bg:#16140f; --card:#211e18; --ink:#f2ede2; --sub:#9b9486; --line:#353026;
+    --bg:#16140f; --card:#211e18; --ink:#f2ede2; --sub:#9b9486; --line:#353026; --soft:#2a261f;
     --ok:#6fcf8f; --okbg:#1f3a28; --ng:#ff8a7a; --ngbg:#43201b; --warn:#ffc266; --warnbg:#3d2e12; --if:#9db4e6;
+    --acc:#8ab4f8; --star:#f6c344; --now:#ff6b5e;
   }
 }
 :root[data-theme="dark"]{
-  --bg:#16140f; --card:#211e18; --ink:#f2ede2; --sub:#9b9486; --line:#353026;
+  --bg:#16140f; --card:#211e18; --ink:#f2ede2; --sub:#9b9486; --line:#353026; --soft:#2a261f;
   --ok:#6fcf8f; --okbg:#1f3a28; --ng:#ff8a7a; --ngbg:#43201b; --warn:#ffc266; --warnbg:#3d2e12; --if:#9db4e6;
+  --acc:#8ab4f8; --star:#f6c344; --now:#ff6b5e;
 }
 *,*::before,*::after{box-sizing:inherit}
 html{scroll-padding-top:env(safe-area-inset-top,0px)}
 body{margin:0;background:var(--bg);color:var(--ink);
   font-family:"Zen Kaku Gothic New","Hiragino Sans","Noto Sans JP","Yu Gothic",sans-serif;
   -webkit-tap-highlight-color:transparent}
-main{max-width:460px;margin:0 auto;padding:20px 16px 40px}
-.day{display:flex;align-items:baseline;justify-content:space-between;margin:4px 2px 14px}
-.day h1{font-size:30px;font-weight:900;margin:0;letter-spacing:.02em}
-.switch{display:flex;background:var(--card);border:1px solid var(--line);border-radius:999px;padding:3px}
-.switch button{border:0;background:none;color:var(--sub);font:inherit;font-size:14px;padding:7px 14px;border-radius:999px}
-.switch button.on{background:var(--ink);color:var(--bg);font-weight:700}
-.warn{background:var(--warnbg);color:var(--warn);border-radius:14px;padding:12px 14px;margin-bottom:12px;font-weight:700;font-size:15px;line-height:1.5}
+button{font:inherit;color:inherit}
+main{max-width:520px;margin:0 auto;padding:16px 14px calc(96px + env(safe-area-inset-bottom,0px))}
+[hidden]{display:none!important}
+
+/* 下のタブ */
+nav.tabs{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);
+  display:flex;justify-content:center;padding-bottom:env(safe-area-inset-bottom,0px);z-index:20}
+nav.tabs a{flex:1;max-width:104px;text-align:center;padding:8px 0 9px;font-size:11px;color:var(--sub);text-decoration:none}
+nav.tabs a .ic{display:block;font-size:20px;line-height:1.2}
+nav.tabs a.on{color:var(--ink);font-weight:700}
+
+.head{display:flex;align-items:center;gap:8px;margin:4px 2px 14px}
+.head h1{font-size:26px;font-weight:900;margin:0;flex:1;letter-spacing:.02em}
+.icon-btn{border:1px solid var(--line);background:var(--card);border-radius:12px;min-width:40px;height:40px;padding:0 10px;font-size:15px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:14px;margin-bottom:12px}
+.card h2{font-size:15px;margin:0 0 10px;display:flex;align-items:center;gap:6px}
+.card h2 .more{margin-left:auto;font-size:12px;color:var(--sub);font-weight:400}
+.empty{color:var(--sub);font-size:14px;padding:4px 0}
+.status{font-size:12px;color:var(--sub);text-align:center;margin-top:14px}
+.warn{background:var(--warnbg);color:var(--warn);border-radius:14px;padding:12px 14px;margin-bottom:12px;font-weight:700;font-size:14px;line-height:1.5}
+
+/* ダッシュボード */
+.dash-date{font-size:34px;font-weight:900;margin:6px 2px 2px}
+.dash-sub{color:var(--sub);font-size:14px;margin:0 2px 16px}
+.ev-line{display:flex;gap:10px;align-items:baseline;padding:7px 0;border-top:1px solid var(--line)}
+.ev-line:first-of-type{border-top:0}
+.ev-line .t{font-size:13px;color:var(--sub);width:88px;flex:none;font-variant-numeric:tabular-nums}
+.ev-line .bar{width:4px;align-self:stretch;border-radius:2px;flex:none}
+.ev-line.past{opacity:.5}
+.ev-line.nowon .t{color:var(--now);font-weight:700}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{display:flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:999px;padding:6px 11px;font-size:13px;background:var(--bg)}
+.chip .m{font-weight:900}
+.chip.o .m{color:var(--ok)} .chip.x .m{color:var(--ng)} .chip.n .m{color:var(--sub)}
+.quick{display:flex;gap:10px;margin-bottom:12px}
+.quick button{flex:1;border:1px dashed var(--line);background:none;border-radius:14px;padding:12px;font-size:14px;color:var(--sub)}
+
+/* TODO（Microsoft To Do風） */
+.lists a{display:flex;align-items:center;gap:12px;padding:12px 4px;text-decoration:none;color:var(--ink);font-size:16px;border-radius:10px}
+.lists a .li{width:26px;text-align:center;font-size:18px}
+.lists a .cnt{margin-left:auto;color:var(--sub);font-size:13px}
+.lists hr{border:0;border-top:1px solid var(--line);margin:8px 0}
+.task{display:flex;align-items:center;gap:12px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:11px 12px;margin-bottom:6px}
+.task .circ{width:22px;height:22px;border-radius:50%;border:2px solid var(--sub);flex:none;background:none;padding:0;display:flex;align-items:center;justify-content:center;font-size:13px}
+.task.done .circ{background:var(--acc);border-color:var(--acc);color:var(--card)}
+.task .tx{flex:1;min-width:0}
+.task .tt{font-size:15px;word-break:break-word}
+.task.done .tt{text-decoration:line-through;color:var(--sub)}
+.task .meta{font-size:12px;color:var(--sub);margin-top:2px;display:flex;flex-wrap:wrap;gap:0 8px}
+.task .meta .late{color:var(--ng)}
+.task .meta .today{color:var(--acc)}
+.task .star{background:none;border:0;font-size:20px;color:var(--sub);padding:2px 4px}
+.task .star.on{color:var(--star)}
+.donehead{background:none;border:0;color:var(--sub);font-size:14px;padding:10px 2px;font-weight:700}
+.grp{font-size:13px;color:var(--sub);font-weight:700;margin:12px 2px 6px}
+.grp.late{color:var(--ng)}
+.addbar{position:fixed;left:0;right:0;bottom:calc(58px + env(safe-area-inset-bottom,0px));padding:8px 14px;z-index:15;pointer-events:none}
+.addbar form{max-width:520px;margin:0 auto;display:flex;gap:8px;pointer-events:auto}
+.addbar input{flex:1;padding:13px 14px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--ink);font:inherit;font-size:16px;box-shadow:0 4px 14px rgba(0,0,0,.08)}
+
+/* シート（編集画面） */
+.sheet-bg{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:40;display:flex;align-items:flex-end;justify-content:center}
+.sheet{background:var(--bg);width:100%;max-width:520px;max-height:88vh;overflow:auto;border-radius:20px 20px 0 0;padding:16px 16px calc(20px + env(safe-area-inset-bottom,0px))}
+.sheet .grab{width:40px;height:4px;background:var(--line);border-radius:2px;margin:0 auto 12px}
+.fld{margin-bottom:12px}
+.fld label{display:block;font-size:12px;color:var(--sub);margin-bottom:4px}
+.inp{width:100%;padding:11px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--ink);font:inherit;font-size:16px}
+textarea.inp{min-height:80px;resize:vertical}
+.row2{display:flex;gap:10px}
+.row2>*{flex:1}
+.title-inp{font-size:20px;font-weight:700;border:0;background:none;padding:6px 0;width:100%;color:var(--ink);font-family:inherit}
+.title-inp:focus{outline:none}
+.opt{display:flex;align-items:center;gap:10px;width:100%;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:8px;font-size:15px;text-align:left}
+.opt.on{color:var(--acc);font-weight:700}
+.step{display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--line)}
+.step .circ{width:18px;height:18px;border-radius:50%;border:2px solid var(--sub);background:none;padding:0;flex:none;font-size:10px;display:flex;align-items:center;justify-content:center}
+.step.done .circ{background:var(--acc);border-color:var(--acc);color:var(--card)}
+.step input{flex:1;border:0;background:none;color:var(--ink);font:inherit;font-size:15px;padding:4px 0}
+.step.done input{text-decoration:line-through;color:var(--sub)}
+.step .x{background:none;border:0;color:var(--sub);font-size:16px}
+.btnrow{display:flex;gap:10px;margin-top:14px}
+.btnrow button{flex:1;padding:13px;border-radius:14px;font-size:15px;font-weight:700;border:1px solid var(--line);background:var(--card)}
+.btnrow .primary{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.btnrow .danger{color:var(--ng)}
+.colors{display:flex;gap:10px;flex-wrap:wrap}
+.colors button{width:30px;height:30px;border-radius:50%;border:3px solid transparent;padding:0}
+.colors button.on{border-color:var(--ink)}
+.toggle{display:flex;align-items:center;gap:8px;font-size:15px}
+
+/* カレンダー */
+.cal-head{display:flex;align-items:center;gap:6px;margin:4px 0 10px}
+.cal-head h1{font-size:22px;font-weight:900;margin:0;flex:1}
+.seg{display:flex;background:var(--card);border:1px solid var(--line);border-radius:999px;padding:3px;margin-bottom:10px}
+.seg button{flex:1;border:0;background:none;color:var(--sub);font-size:13px;padding:7px 0;border-radius:999px}
+.seg button.on{background:var(--ink);color:var(--bg);font-weight:700}
+.month{background:var(--card);border:1px solid var(--line);border-radius:16px;overflow:hidden}
+.month .wd{display:grid;grid-template-columns:repeat(7,1fr);font-size:11px;color:var(--sub);text-align:center;padding:6px 0;border-bottom:1px solid var(--line)}
+.month .grid{display:grid;grid-template-columns:repeat(7,1fr)}
+.month .cell{min-height:84px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);padding:3px 2px;overflow:hidden;cursor:pointer}
+.month .cell:nth-child(7n){border-right:0}
+.month .cell .dn{font-size:12px;text-align:center;margin-bottom:2px}
+.month .cell.other{opacity:.4}
+.month .cell.today .dn span{background:var(--acc);color:var(--card);border-radius:999px;padding:1px 6px;font-weight:700}
+.month .ech{font-size:10px;line-height:1.35;border-radius:4px;padding:0 3px;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#fff}
+.month .ech.timed{background:none!important;color:var(--ink)}
+.month .ech.timed::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--c);margin-right:3px;vertical-align:1px}
+.month .more{font-size:10px;color:var(--sub);padding-left:3px}
+.tl-wrap{background:var(--card);border:1px solid var(--line);border-radius:16px;overflow:hidden}
+.tl-days{display:flex;border-bottom:1px solid var(--line);padding-left:44px}
+.tl-days .d{flex:1;text-align:center;padding:6px 0;font-size:12px;color:var(--sub);cursor:pointer}
+.tl-days .d b{display:block;font-size:20px;color:var(--ink)}
+.tl-days .d.today b{color:var(--acc)}
+.tl-allday{display:flex;padding-left:44px;border-bottom:1px solid var(--line);min-height:6px}
+.tl-allday .col{flex:1;padding:2px;min-width:0}
+.tl-allday .ech{font-size:11px;border-radius:4px;padding:2px 4px;margin-bottom:2px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+.tl-scroll{height:62vh;overflow-y:auto;position:relative}
+.tl{position:relative;display:flex}
+.tl .hours{width:44px;flex:none}
+.tl .hours div{height:48px;font-size:10px;color:var(--sub);text-align:right;padding-right:6px;transform:translateY(-6px)}
+.tl .col{flex:1;position:relative;border-left:1px solid var(--line);min-width:0}
+.tl .col .hl{height:48px;border-top:1px solid var(--line)}
+.tl .ev{position:absolute;border-radius:6px;padding:2px 5px;font-size:11px;line-height:1.3;color:#fff;overflow:hidden;cursor:pointer;border:1px solid var(--card)}
+.tl .ev b{display:block;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tl .nowline{position:absolute;left:0;right:0;height:2px;background:var(--now);z-index:3}
+.tl .nowline::before{content:"";position:absolute;left:-5px;top:-4px;width:10px;height:10px;border-radius:50%;background:var(--now)}
+.fab{position:fixed;right:max(18px,calc(50% - 250px));bottom:calc(76px + env(safe-area-inset-bottom,0px));width:56px;height:56px;border-radius:18px;border:0;background:var(--acc);color:#fff;font-size:28px;box-shadow:0 6px 18px rgba(0,0,0,.2);z-index:16}
+
+/* 習慣 */
 .item{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:14px;margin-bottom:10px}
-.row{display:flex;align-items:center;gap:10px}
+.hrow{display:flex;align-items:center;gap:10px}
 .name{flex:1;min-width:0}
-.name b{font-size:19px;display:block}
+.name b{font-size:18px;display:block}
 .ift{font-size:13px;line-height:1.55;margin-top:4px;color:var(--sub)}
 .ift .k{color:var(--if);font-weight:700;margin-right:4px}
 .freq{font-size:11px;border:1px solid var(--line);border-radius:6px;padding:1px 6px;margin-left:6px;color:var(--sub);font-weight:400;vertical-align:2px}
-.btn{width:58px;height:54px;border-radius:14px;border:2px solid var(--line);background:transparent;
-  font:inherit;font-size:26px;font-weight:900;color:var(--sub);flex:none}
-.btn.ok.on{background:var(--okbg);border-color:var(--ok);color:var(--ok)}
-.btn.ng.on{background:var(--ngbg);border-color:var(--ng);color:var(--ng)}
-.note{width:100%;margin-top:10px;padding:10px 12px;border-radius:10px;border:1px solid var(--line);
-  background:var(--bg);color:var(--ink);font:inherit;font-size:16px}
+.mbtn{width:56px;height:52px;border-radius:14px;border:2px solid var(--line);background:transparent;font-size:24px;font-weight:900;color:var(--sub);flex:none}
+.mbtn.ok.on{background:var(--okbg);border-color:var(--ok);color:var(--ok)}
+.mbtn.ng.on{background:var(--ngbg);border-color:var(--ng);color:var(--ng)}
+.note{width:100%;margin-top:10px;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font:inherit;font-size:16px}
 .last{font-size:12px;color:var(--sub);margin-top:6px}
 .last.late{color:var(--warn);font-weight:700}
-h2{font-size:15px;color:var(--sub);font-weight:700;margin:26px 2px 10px}
+.switch{display:flex;background:var(--card);border:1px solid var(--line);border-radius:999px;padding:3px}
+.switch button{border:0;background:none;color:var(--sub);font-size:14px;padding:7px 14px;border-radius:999px}
+.switch button.on{background:var(--ink);color:var(--bg);font-weight:700}
 .grid-wrap{overflow-x:auto;background:var(--card);border:1px solid var(--line);border-radius:18px;padding:12px}
 table{border-collapse:collapse;font-size:13px;width:100%}
 th,td{text-align:center;padding:5px 3px;white-space:nowrap}
@@ -67,262 +190,52 @@ th{color:var(--sub);font-weight:400}
 td.l{text-align:left;font-weight:700;padding-right:8px}
 .dot{display:inline-block;width:18px;height:18px;border-radius:6px;background:var(--line)}
 .dot.o{background:var(--ok)} .dot.x{background:var(--ng)}
-.status{font-size:12px;color:var(--sub);text-align:center;margin-top:18px}
-.edit-open{width:100%;margin-top:6px;padding:13px;border-radius:14px;border:1px dashed var(--line);background:none;color:var(--sub);font:inherit;font-size:15px}
+.edit-open{width:100%;margin-top:6px;padding:13px;border-radius:14px;border:1px dashed var(--line);background:none;color:var(--sub);font-size:15px}
 .ed{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:14px;margin-bottom:10px}
-.ed label{display:block;font-size:12px;color:var(--sub);margin:8px 0 3px}
-.ed input,.ed select{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font:inherit;font-size:16px}
-.ed .del{margin-top:10px;background:none;border:0;color:var(--ng);font:inherit;font-size:14px;padding:4px 0}
-.bar{display:flex;gap:10px;margin-top:6px}
-.bar button{flex:1;padding:13px;border-radius:14px;font:inherit;font-size:15px;font-weight:700;border:1px solid var(--line);background:var(--card);color:var(--ink)}
-.bar .primary{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.ed .del{margin-top:10px;background:none;border:0;color:var(--ng);font-size:14px;padding:4px 0}
+h3{font-size:15px;color:var(--sub);font-weight:700;margin:22px 2px 10px}
+
+body.has-add main{padding-bottom:calc(170px + env(safe-area-inset-bottom,0px))}
+.hab-circ.life{border-radius:50%;border-style:dashed}
+.task.done .hab-circ.life{background:var(--warn);border-color:var(--warn);border-style:solid;color:var(--card)}
+.badge.life{color:var(--warn);border-color:var(--warn)}
+.hab-circ:disabled{opacity:.5}
+.meta .late{color:var(--ng)}
+.meta .today{color:var(--acc)}
+.tagpick{display:flex;flex-wrap:wrap;gap:6px}
+.tagpick button{border:1px solid var(--line);background:var(--card);border-radius:999px;padding:6px 12px;font-size:13px;color:var(--sub)}
+.tagpick button.on{background:var(--ink);color:var(--bg);border-color:var(--ink);font-weight:700}
+.tagbtn{flex:none;border:1.5px solid;border-radius:12px;background:var(--card);padding:0 12px;font-size:13px;font-weight:700;box-shadow:0 4px 14px rgba(0,0,0,.08)}
+.card.focus{border:2px solid var(--acc)}
+/* 並べ替え */
+.handle{touch-action:none;cursor:grab;color:var(--sub);font-size:18px;padding:6px 2px 6px 8px;user-select:none;-webkit-user-select:none;flex:none}
+.dragging{position:relative;z-index:30;box-shadow:0 10px 24px rgba(0,0,0,.18);transition:none!important}
+.sortable>[data-id]{transition:transform .15s ease}
+.badge{display:inline-block;font-size:11px;border-radius:6px;padding:1px 6px;border:1px solid var(--line);color:var(--sub)}
+.badge.time{color:var(--acc);border-color:var(--acc)}
+.task .cbar{width:4px;align-self:stretch;border-radius:2px;flex:none}
+.hab-circ{width:22px;height:22px;border-radius:6px;border:2px solid var(--sub);flex:none;background:none;padding:0;font-size:13px}
+.task.done .hab-circ{background:var(--ok);border-color:var(--ok);color:var(--card)}
+.tl .ev.done{opacity:.45;text-decoration:line-through}
+.tl-allday .ech.done,.month .ech.done{opacity:.45;text-decoration:line-through}
+.progress{height:6px;border-radius:3px;background:var(--soft);overflow:hidden;margin:2px 0 12px}
+.progress i{display:block;height:100%;background:var(--ok)}
+.carry{font-size:12px;color:var(--warn)}
 </style>
 </head>
 <body>
-<main>
-  <div id="view">
-    <div class="day">
-      <h1 id="dateLabel">—</h1>
-      <div class="switch">
-        <button id="tYest">昨日</button>
-        <button id="tToday" class="on">今日</button>
-      </div>
-    </div>
-    <div id="warn"></div>
-    <div id="items"></div>
-    <button class="edit-open" id="openEdit">IF-THENを編集する</button>
-    <h2>直近14日</h2>
-    <div class="grid-wrap"><table id="grid"></table></div>
-  </div>
-  <div id="editor" hidden>
-    <div class="day"><h1>IF-THEN</h1></div>
-    <div id="edList"></div>
-    <div class="bar"><button id="addItem">＋ 追加</button></div>
-    <div class="bar"><button id="cancelEdit">やめる</button><button class="primary" id="saveEdit">保存</button></div>
-  </div>
-  <div class="status" id="status">読み込み中…</div>
-</main>
-
+<main id="app"></main>
+<div id="addbar" class="addbar" hidden></div>
+<button id="fab" class="fab" hidden>＋</button>
+<nav class="tabs" id="tabs">
+  <a href="#/" data-r="home"><span class="ic">⌂</span>ホーム</a>
+  <a href="#/today" data-r="today"><span class="ic">◷</span>今日</a>
+  <a href="#/cal" data-r="cal"><span class="ic">▦</span>カレンダー</a>
+  <a href="#/todo/today" data-r="todo"><span class="ic">☑</span>やること</a>
+  <a href="#/habit" data-r="habit"><span class="ic">◎</span>習慣</a>
+</nav>
+<div id="sheet"></div>
 <script src="config.js"></script>
-<script>
-const DEFAULT_ITEMS = [
-  {id:"g", name:"声門閉鎖", ifText:"歌の練習を始めたら", thenText:"最初の10分は声門閉鎖", freq:"daily"},
-  {id:"r", name:"リール", ifText:"", thenText:"リールを1本撮る", freq:"daily"},
-  {id:"m", name:"薬", ifText:"寝る前に洗顔したら", thenText:"薬を塗る", freq:"daily"},
-  {id:"p", name:"写真", ifText:"薬を塗ったら", thenText:"肌の写真を1枚撮る", freq:"weekly"}
-];
-let items = DEFAULT_ITEMS.map(x=>({...x}));
-let days = {};      // {"2026-10-07": {g:"o", r:"x", n_g:"メモ", ...}}
-let offset = 0;
-let draft = null;
-const CFG = window.HABIT_CONFIG || {};
-const ONLINE = !!(CFG.API_URL && CFG.KEY);
-const pending = {};  // "date|id" -> true
-let saveTimer = null;
-
-const pad = n => String(n).padStart(2,"0");
-const keyOf = d => d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());
-const dayAt = off => { const d = new Date(); d.setHours(12,0,0,0); d.setDate(d.getDate()+off); return d; };
-const WD = ["日","月","火","水","木","金","土"];
-const $ = id => document.getElementById(id);
-const st = t => { $("status").textContent = t; };
-
-function el(tag, cls, text){ const e=document.createElement(tag); if(cls) e.className=cls; if(text!=null) e.textContent=text; return e; }
-
-function render(){
-  const d = dayAt(offset), k = keyOf(d);
-  $("dateLabel").textContent = (d.getMonth()+1)+"/"+d.getDate()+"（"+WD[d.getDay()]+"）";
-  $("tToday").classList.toggle("on", offset===0);
-  $("tYest").classList.toggle("on", offset===-1);
-  const rec = days[k] || {};
-  const box = $("items"); box.innerHTML = "";
-  items.forEach(it => {
-    const card = el("div","item");
-    const row = el("div","row");
-    const nm = el("div","name");
-    const b = el("b", null, it.name || "（名前なし）");
-    if(it.freq==="weekly") b.appendChild(el("span","freq","週1"));
-    nm.appendChild(b);
-    const ift = el("div","ift");
-    const l1 = el("div"); l1.appendChild(el("span","k","IF")); l1.appendChild(document.createTextNode(it.ifText || "（未設定）"));
-    const l2 = el("div"); l2.appendChild(el("span","k","THEN")); l2.appendChild(document.createTextNode(it.thenText || "（未設定）"));
-    ift.appendChild(l1); ift.appendChild(l2); nm.appendChild(ift);
-    row.appendChild(nm);
-    const ok = el("button","btn ok"+(rec[it.id]==="o"?" on":""),"○");
-    const ng = el("button","btn ng"+(rec[it.id]==="x"?" on":""),"×");
-    ok.onclick = () => setMark(k,it.id,"o");
-    ng.onclick = () => setMark(k,it.id,"x");
-    row.appendChild(ok); row.appendChild(ng);
-    card.appendChild(row);
-    if(it.freq==="weekly"){
-      const ld = lastDone(it.id);
-      const lt = el("div","last");
-      if(ld===null){ lt.textContent = "まだ1回も記録なし"; lt.classList.add("late"); }
-      else { lt.textContent = "前回："+ld.label+"（"+ld.ago+"日前）"; if(ld.ago>=7) lt.classList.add("late"); }
-      card.appendChild(lt);
-    }
-    const note = el("input","note");
-    note.type="text"; note.placeholder="一言メモ";
-    note.value = rec["n_"+it.id] || "";
-    note.oninput = () => { days[k] = {...(days[k]||{}), ["n_"+it.id]: note.value}; queueSave(k, it.id); };
-    card.appendChild(note);
-    box.appendChild(card);
-  });
-  renderWarn(); renderGrid();
-}
-
-function setMark(k, id, v){
-  const rec = {...(days[k]||{})};
-  if(rec[id]===v) delete rec[id]; else rec[id]=v;
-  days[k]=rec; render(); queueSave(k, id);
-}
-function lastDone(id){
-  for(let off=0; off>-120; off--){
-    const r = days[keyOf(dayAt(off))];
-    if(r && r[id]==="o"){ const d=dayAt(off); return {label:(d.getMonth()+1)+"/"+d.getDate(), ago:-off}; }
-  }
-  return null;
-}
-function streakX(id){
-  let n=0;
-  for(let off=0; off>-60; off--){
-    const r = days[keyOf(dayAt(off))];
-    if(off===0 && !(r && r[id])) continue;
-    if(r && r[id]==="x") n++; else break;
-  }
-  return n;
-}
-function renderWarn(){
-  const msgs = [];
-  items.forEach(it=>{
-    if(it.freq==="daily"){ const s=streakX(it.id); if(s>=3) msgs.push(it.name+"が"+s+"日続けて×"); }
-  });
-  const w=$("warn"); w.innerHTML="";
-  if(msgs.length){ w.appendChild(el("div","warn", msgs.join("、")+"。何が重い？ その項目のメモに書いて。")); }
-}
-function renderGrid(){
-  const t=$("grid"); t.innerHTML="";
-  const offs=[]; for(let o=-13;o<=0;o++) offs.push(o);
-  const hr=el("tr"); hr.appendChild(el("th"));
-  offs.forEach(o=>hr.appendChild(el("th",null,String(dayAt(o).getDate()))));
-  t.appendChild(hr);
-  items.forEach(it=>{
-    const tr=el("tr"); tr.appendChild(el("td","l",it.name));
-    offs.forEach(o=>{ const r=days[keyOf(dayAt(o))]||{}; const td=el("td"); td.appendChild(el("span","dot "+(r[it.id]||""))); tr.appendChild(td); });
-    t.appendChild(tr);
-  });
-}
-
-/* ---------- 編集 ---------- */
-function openEditor(){
-  draft = items.map(x=>({...x}));
-  $("view").hidden = true; $("editor").hidden = false;
-  renderEditor(); window.scrollTo(0,0);
-}
-function renderEditor(){
-  const box=$("edList"); box.innerHTML="";
-  draft.forEach((it,i)=>{
-    const c=el("div","ed");
-    const field=(label,key,ph)=>{
-      c.appendChild(el("label",null,label));
-      const inp=el("input"); inp.type="text"; inp.placeholder=ph; inp.value=it[key]||"";
-      inp.oninput=()=>{ it[key]=inp.value; }; c.appendChild(inp);
-    };
-    field("名前","name","例：声門閉鎖");
-    field("IF（いつ・何をしたら）","ifText","例：歌の練習を始めたら");
-    field("THEN（やること）","thenText","例：最初の10分は声門閉鎖");
-    c.appendChild(el("label",null,"頻度"));
-    const sel=el("select");
-    [["daily","毎日"],["weekly","週1"]].forEach(([v,t])=>{ const o=el("option",null,t); o.value=v; if(it.freq===v) o.selected=true; sel.appendChild(o); });
-    sel.onchange=()=>{ it.freq=sel.value; }; c.appendChild(sel);
-    const del=el("button","del","この項目を消す");
-    del.onclick=()=>{ draft.splice(i,1); renderEditor(); }; c.appendChild(del);
-    box.appendChild(c);
-  });
-}
-$("addItem").onclick=()=>{ draft.push({id:"h"+Date.now().toString(36), name:"", ifText:"", thenText:"", freq:"daily"}); renderEditor(); };
-$("cancelEdit").onclick=()=>{ draft=null; $("editor").hidden=true; $("view").hidden=false; };
-$("saveEdit").onclick=async()=>{
-  items = draft.filter(x=>(x.name||x.ifText||x.thenText)); draft=null;
-  $("editor").hidden=true; $("view").hidden=false; render();
-  try{ localStorage.setItem("habit-items", JSON.stringify(items)); }catch(e){}
-  if(ONLINE){ try{ await api({action:"saveItems", items}); st("保存済み"); }catch(e){ st("設定を保存できませんでした（圏外？）"); } }
-};
-$("openEdit").onclick=openEditor;
-
-/* ---------- 保存（Googleスプレッドシート） ---------- */
-async function api(body){
-  const res = await fetch(CFG.API_URL, {method:"POST", body: JSON.stringify({...body, key: CFG.KEY})});
-  const j = await res.json();
-  if(!j.ok) throw new Error(j.error||"error");
-  return j;
-}
-function cache(){
-  try{ localStorage.setItem("habit-days", JSON.stringify(days)); localStorage.setItem("habit-pending", JSON.stringify(pending)); }catch(e){}
-}
-function queueSave(k, id){
-  pending[k+"|"+id] = true; cache();
-  clearTimeout(saveTimer); saveTimer = setTimeout(flush, 700);
-}
-async function flush(){
-  if(!ONLINE){ st("この端末にだけ保存中（config.js未設定）"); return; }
-  const keys = Object.keys(pending);
-  if(!keys.length) return;
-  st("保存中…");
-  for(const pk of keys){
-    const [date, id] = pk.split("|");
-    const r = days[date] || {};
-    const it = items.find(x=>x.id===id) || {name:""};
-    try{
-      await api({action:"upsert", date, id, name: it.name, mark: r[id]||"", note: r["n_"+id]||""});
-      delete pending[pk]; cache();
-    }catch(e){ st("未送信あり（電波が戻ったら自動で送る）"); setTimeout(flush, 15000); return; }
-  }
-  st("保存済み");
-}
-
-$("tToday").onclick=()=>{ offset=0; render(); };
-$("tYest").onclick=()=>{ offset=-1; render(); };
-window.addEventListener("online", flush);
-document.addEventListener("visibilitychange", ()=>{ if(document.visibilityState==="visible") flush(); });
-
-try{ const s=localStorage.getItem("habit-days"); if(s) days=JSON.parse(s)||{}; }catch(e){}
-try{ const s=localStorage.getItem("habit-pending"); if(s) Object.assign(pending, JSON.parse(s)||{}); }catch(e){}
-try{ const s=localStorage.getItem("habit-items"); if(s){ const v=JSON.parse(s); if(Array.isArray(v)&&v.length) items=v; } }catch(e){}
-render();
-
-if("serviceWorker" in navigator){ navigator.serviceWorker.register("sw.js").catch(()=>{}); }
-
-(async()=>{
-  if(!ONLINE){ st("この端末にだけ保存中（config.js未設定）"); return; }
-  try{
-    const since = keyOf(dayAt(-120));
-    const url = CFG.API_URL + "?action=load&key=" + encodeURIComponent(CFG.KEY) + "&since=" + since;
-    const j = await (await fetch(url)).json();
-    if(!j.ok) throw new Error(j.error);
-    const remote = {};
-    (j.records||[]).forEach(r=>{
-      remote[r.date] = remote[r.date] || {};
-      if(r.mark) remote[r.date][r.id] = r.mark;
-      if(r.note) remote[r.date]["n_"+r.id] = r.note;
-    });
-    // 未送信の分だけ端末の値を優先し、それ以外はシートの値に合わせる
-    const merged = remote;
-    Object.keys(pending).forEach(pk=>{
-      const [d,id] = pk.split("|"); const loc = days[d]||{};
-      merged[d] = merged[d]||{};
-      if(loc[id]) merged[d][id]=loc[id]; else delete merged[d][id];
-      if(loc["n_"+id]) merged[d]["n_"+id]=loc["n_"+id]; else delete merged[d]["n_"+id];
-    });
-    days = merged;
-    if(Array.isArray(j.items) && j.items.length){ items = j.items; localStorage.setItem("habit-items", JSON.stringify(items)); }
-    else { await api({action:"saveItems", items}); }
-    cache();
-    if(!draft) render();
-    st("同期済み");
-    flush();
-  }catch(e){ st("同期できませんでした（圏外？）"); }
-})();
-</script>
+<script src="app.js"></script>
 </body>
 </html>
