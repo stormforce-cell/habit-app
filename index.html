@@ -116,6 +116,44 @@ nav.tabs svg{width:26px;height:26px}
 .ifrow input{flex:1;min-width:0;border:0;background:none;font:inherit;font-size:16px;color:var(--ink);padding:8px 2px;outline:none}
 .ttlrow .ttl{flex:1;min-width:0}
 
+/* メモ（常に表示） */
+.row .t .memo{font-size:12.5px;line-height:1.45;color:var(--sub);margin-top:4px;white-space:pre-wrap;word-break:break-word;text-decoration:none}
+.row.done .t .memo{text-decoration:none}
+
+/* 案件 */
+.row .t .case{display:flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:var(--tc,var(--sub));margin-bottom:2px}
+.row .t .case svg{width:13px;height:13px}
+.row.hold{box-shadow:none;background:transparent;border:1.5px dashed var(--line)}
+.row.hold .holdic{width:28px;height:28px;border-radius:50%;background:var(--soft);color:var(--sub);display:flex;align-items:center;justify-content:center;flex:none}
+.row.hold .holdic svg{width:14px;height:14px}
+.sec svg{width:15px;height:15px}
+.chip.tocase{flex:none;font-size:12px;padding:6px 10px}
+.chip.tocase svg{width:14px;height:14px}
+.casehead{width:34px;height:34px;border-radius:10px;background:var(--soft);color:var(--acc);display:flex;align-items:center;justify-content:center;flex:none}
+.casehead svg{width:20px;height:20px}
+.cprog{height:6px;border-radius:3px;background:var(--soft);overflow:hidden;margin:0 2px 10px}
+.cprog i{display:block;height:100%;background:var(--ok)}
+.blk.steps{padding:4px 8px}
+.stp{display:flex;align-items:center;gap:6px;min-height:46px;border-bottom:1px solid var(--line)}
+.stp:last-child{border-bottom:0}
+.stp input{flex:1;min-width:0;border:0;background:none;font:inherit;font-size:16px;color:var(--ink);padding:8px 2px;outline:none}
+.sdue{position:relative;flex:none;display:flex;align-items:center;gap:3px;height:30px;padding:0 8px;border-radius:9px;background:var(--soft);color:var(--sub);font-size:12px;font-weight:700}
+.sdue.on{color:var(--life)}
+.sdue svg{width:14px;height:14px}
+.sdue input{position:absolute;inset:0;opacity:0;width:100%;height:100%;padding:0;border:0}
+.stp.done input{color:var(--sub);text-decoration:line-through}
+.stp.cur{background:color-mix(in srgb,var(--acc) 7%,transparent);border-radius:10px}
+.schk{width:26px;height:26px;border-radius:50%;border:2.5px solid var(--sub);background:none;padding:0;flex:none;display:flex;align-items:center;justify-content:center;color:#fff}
+.schk svg{width:14px;height:14px;opacity:0}
+.stp.done .schk{background:var(--ok);border-color:var(--ok)}
+.stp.done .schk svg{opacity:1}
+.schk.ghost{border-style:dashed;opacity:.4}
+.skind{width:30px;height:30px;border-radius:9px;border:0;background:var(--soft);color:var(--acc);flex:none;display:flex;align-items:center;justify-content:center}
+.skind.w{color:var(--life)}
+.skind svg{width:15px;height:15px}
+.sbtn{width:30px;height:30px;border:0;background:none;color:var(--sub);flex:none;display:flex;align-items:center;justify-content:center}
+.sbtn svg{width:16px;height:16px}
+
 /* シート */
 .sheet-bg{position:fixed;inset:0;background:rgba(0,0,0,.32);z-index:60;display:flex;align-items:flex-end;justify-content:center}
 .sheet{background:var(--bg);width:100%;max-width:560px;max-height:90vh;overflow:auto;border-radius:22px 22px 0 0;padding:10px 16px calc(18px + env(safe-area-inset-bottom,0px))}
