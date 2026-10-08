@@ -429,7 +429,13 @@ function openSheet(){
   const bg=el("div","sheet-bg"); const sh=el("div","sheet");
   bg.appendChild(sh); root.appendChild(bg);
   bg.onclick=e=>{ if(e.target===bg) closeSheet(); };
-  sh.appendChild(el("div","grab"));
+  const hd=el("div","shead"); const gb=el("div","grab"); const cx=el("button","sclose"); cx.type="button"; cx.setAttribute("aria-label","閉じる"); cx.appendChild(svg("x"));
+  hd.append(gb, cx); sh.appendChild(hd);
+  cx.onclick=closeSheet; gb.onclick=closeSheet;
+  let y0=null, dy=0;
+  hd.addEventListener("touchstart", e=>{ y0=e.touches[0].clientY; dy=0; sh.style.transition="none"; }, {passive:true});
+  hd.addEventListener("touchmove", e=>{ if(y0==null) return; dy=Math.max(0, e.touches[0].clientY-y0); sh.style.transform="translateY("+dy+"px)"; e.preventDefault(); }, {passive:false});
+  hd.addEventListener("touchend", ()=>{ sh.style.transition="transform .2s"; if(dy>80){ sh.style.transform="translateY(100%)"; setTimeout(closeSheet,180); } else sh.style.transform=""; y0=null; });
   return sh;
 }
 function closeSheet(){ $("sheet").innerHTML=""; }
@@ -438,7 +444,7 @@ function ln(icon){ const l=el("div","ln"); l.appendChild(svg(icon)); return l; }
 function chipGroup(options, cur, onPick){
   const box=el("div","chips");
   const paint=()=>{ box.innerHTML=""; options().forEach(o=>{ const b=el("button","chip"+(o.v===cur?" on":"")); b.type="button"; if(o.dot){ const i=el("i"); i.style.background=o.dot; b.appendChild(i); } b.appendChild(document.createTextNode(o.t)); b.onclick=()=>{ if(o.v==="__new"){ const t=(prompt("新しいタグ")||"").trim(); if(!t) return; cur=t; extraTags.add(t); onPick(t); } else { cur=o.v; onPick(o.v); } paint(); }; box.appendChild(b); }); };
-  paint(); return {box, repaint:paint};
+  paint(); return {box, repaint:paint, set:v=>{ cur=v; paint(); }};
 }
 function openItem(id, preset={}){
   const ex=id?S.events.find(e=>e.id===id):null;
@@ -464,8 +470,8 @@ function openItem(id, preset={}){
   // 日付
   const l2=ln("cal"); const dIn=el("input"); dIn.type="date"; dIn.value=e.date;
   const dg=chipGroup(()=>[{v:T,t:"今日"},{v:dayAt(1),t:"明日"}], e.date, v=>{ e.date=v; dIn.value=v; });
-  dIn.onchange=()=>{ e.date=dIn.value||e.date; dg.repaint(); };
-  dg.box.appendChild(dIn); l2.appendChild(dg.box); b1.appendChild(l2);
+  dIn.onchange=()=>{ e.date=dIn.value||e.date; dg.set(e.date); };
+  l2.classList.add("wrap"); l2.append(dg.box, dIn); b1.appendChild(l2);
   // 時間
   const l3=ln("clock"); const tbox=el("div","chips");
   const tOn=el("button","chip"+(timed?" on":""),timed?"時間あり":"時間なし"); tOn.type="button";
