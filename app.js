@@ -150,6 +150,8 @@ const isCase = e => e.rule==="case";
 const isStep = e => String(e.rule||"").startsWith("c:");
 const caseIdOf = e => String(e.rule).slice(2);
 const isWait = e => e.color==="待つ";
+const blockMin = e => /^\d+$/.test(String(e.color||"").trim()) ? Number(e.color) : 0;
+const fmtDur = m => m<60? m+"分" : (m%60? Math.floor(m/60)+"時間"+(m%60)+"分" : (m/60)+"時間");
 const stepNo = e => Number(e.steps)||0;
 const caseHeader = cid => S.events.find(e=>e.id===cid && isCase(e));
 function caseSteps(cid){ return S.events.filter(e=>e.rule==="c:"+cid && !isSkip(e)).sort((a,b)=>stepNo(a)-stepNo(b)); }
@@ -272,6 +274,7 @@ function row(e, opts={}){
   c.onclick=ev=>{ ev.stopPropagation(); toggleDone(e, ev); };
   r.appendChild(c);
   if(isTimed(e)) r.appendChild(el("span","time", e.start));
+  else if(blockMin(e)) r.appendChild(el("span","time blk", fmtDur(blockMin(e))));
   const tbx=titleBox(e);
   if(isStep(e)){ const h=caseHeader(caseIdOf(e)); const st=caseSteps(caseIdOf(e)); const cl=el("div","case"); cl.appendChild(svg("folder")); cl.appendChild(document.createTextNode((h?h.title:"案件")+"  "+(st.findIndex(s=>s.id===e.id)+1)+"/"+st.length)); tbx.insertBefore(cl, tbx.firstChild); }
   if(e.note && String(e.note).trim()) tbx.appendChild(el("div","memo",String(e.note).trim()));
@@ -473,14 +476,25 @@ function openItem(id, preset={}){
   dIn.onchange=()=>{ e.date=dIn.value||e.date; dg.set(e.date); };
   l2.classList.add("wrap"); l2.append(dg.box, dIn); b1.appendChild(l2);
   // 時間
-  const l3=ln("clock"); const tbox=el("div","chips");
-  const tOn=el("button","chip"+(timed?" on":""),timed?"時間あり":"時間なし"); tOn.type="button";
+  // 時間：なし／時刻（開始〜終了）／ブロック（時間は決めず、◯分ぶんの作業として表示だけ）
+  const l3=ln("clock"); const tcol=el("div","tcol");
+  let tmode = timed ? "time" : (blockMin(e) ? "block" : "none");
+  let dur = blockMin(e) || 60;
+  const mbox=el("div","chips");
   const sIn=el("input"); sIn.type="time"; sIn.value=e.start||"09:00";
   const eIn=el("input"); eIn.type="time"; eIn.value=e.end||"";
-  const paintT=()=>{ tOn.className="chip"+(timed?" on":""); tOn.textContent=timed?"時間あり":"時間なし"; sIn.hidden=eIn.hidden=!timed; };
-  tOn.onclick=()=>{ timed=!timed; if(timed && !eIn.value){ const s=toMin(sIn.value)||540; const x=Math.min(s+60,1439); eIn.value=pad(Math.floor(x/60))+":"+pad(x%60); } paintT(); };
+  const trow=el("div","chips trow"); trow.append(sIn, el("span","lab","→"), eIn);
+  const drow=el("div","chips drow");
+  const DURS=[15,30,45,60,90,120,180];
+  const paintT=()=>{
+    mbox.innerHTML="";
+    [["none","時間なし"],["time","時刻"],["block","ブロック"]].forEach(([v,t])=>{ const b=el("button","chip"+(tmode===v?" on":""),t); b.type="button"; b.onclick=()=>{ tmode=v; if(v==="time" && !eIn.value){ const s=toMin(sIn.value)||540; const x=Math.min(s+60,1439); eIn.value=pad(Math.floor(x/60))+":"+pad(x%60); } paintT(); }; mbox.appendChild(b); });
+    trow.hidden = tmode!=="time"; drow.hidden = tmode!=="block";
+    drow.innerHTML=""; DURS.forEach(m=>{ const b=el("button","chip"+(dur===m?" on":""),fmtDur(m)); b.type="button"; b.onclick=()=>{ dur=m; paintT(); }; drow.appendChild(b); });
+    const cm=el("input"); cm.type="number"; cm.min="1"; cm.inputMode="numeric"; cm.placeholder="分"; cm.value=DURS.includes(dur)?"":dur; cm.oninput=()=>{ const v=parseInt(cm.value,10); if(v>0) dur=v; }; drow.append(cm);
+  };
   sIn.onchange=()=>{ const s=toMin(sIn.value), en=toMin(eIn.value); if(s!=null && (en==null||en<=s)){ const x=Math.min(s+60,1439); eIn.value=pad(Math.floor(x/60))+":"+pad(x%60); } };
-  tbox.append(tOn, sIn, eIn); l3.appendChild(tbox); b1.appendChild(l3); paintT();
+  tcol.append(mbox, trow, drow); l3.appendChild(tcol); b1.appendChild(l3); paintT();
   sh.appendChild(b1);
 
   // くり返し
@@ -513,7 +527,8 @@ function openItem(id, preset={}){
     const ifv=ifIn.value.trim();
     setLastTag(e.tag||lastTag);
     const title=joinIT(ifv, then);
-    let item={...e, title, start:timed?sIn.value:"", end:timed?eIn.value:"", note:nIn.value};
+    const kind = isWait(e) ? "待つ" : (tmode==="block" ? String(dur) : "");
+    let item={...e, title, start:tmode==="time"?sIn.value:"", end:tmode==="time"?eIn.value:"", color:kind, note:nIn.value};
     if(!ex || ex.date!==item.date) item.order = ex ? nextOrder(item.date) : (item.date===T||item.date===dayAt(1) ? nextOrder(item.date) : "");
     const oldKind = h ? "habit" : ru ? "rule" : "none";
     const wantHabit = rep==="daily" || (rep==="interval" && h && h.freq==="weekly" && every===7);
@@ -678,7 +693,7 @@ function timeline(days){
   const ad=el("div","tl-allday");
   const lim = calState.allOpen ? 99 : (days.length===1 ? 3 : 2);
   days.forEach(k=>{ const col=el("div","col"); const xs=sortTasks(calItems(k).filter(e=>!isTimed(e)));
-    xs.slice(0,lim).forEach(e=>{ const ch=el("div","ech"+(isDone(e)?" done":""),splitIT(e).then); ch.style.setProperty("--tc",tagColor(e.tag)); ch.onclick=()=>openItem(e.id); col.appendChild(ch); });
+    xs.slice(0,lim).forEach(e=>{ const ch=el("div","ech"+(isDone(e)?" done":""),(blockMin(e)?fmtDur(blockMin(e))+" ":"")+splitIT(e).then); ch.style.setProperty("--tc",tagColor(e.tag)); ch.onclick=()=>openItem(e.id); col.appendChild(ch); });
     if(xs.length>lim){ const m=el("div","adm","+"+(xs.length-lim)); m.onclick=()=>{ calState.allOpen=true; render(); }; col.appendChild(m); }
     else if(calState.allOpen && xs.length>(days.length===1?3:2)){ const m=el("div","adm","▲"); m.onclick=()=>{ calState.allOpen=false; render(); }; col.appendChild(m); }
     ad.appendChild(col); });
