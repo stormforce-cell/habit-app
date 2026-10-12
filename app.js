@@ -217,12 +217,20 @@ function ensureDaily(){
   S.life.forEach(it=>{ if(ruleDueOn(it,T)) saveEv({id:ruleInst(it.id,T), date:T, start:"", end:"", title:it.name, tag:it.tag||"ライフ", note:it.note||"", color:"", done:"", steps:"", order:nextOrder(T), rule:it.id}); });
 }
 // 前の日に終わらなかった「時間なし」のタスクは今日の先頭へ（習慣・時間の予定は移さない）
+// 前の日に終わらなかったものは、0時をまたいだら今日の先頭へ持ち越す（消さない）
+//   ・時間の予定は、時刻を外して同じ長さのブロックにする（例 12:00〜13:00 → 1時間）
+//   ・待つステップは催促日を今日にする（🔔で今日のリストに出る）
+//   ・習慣は持ち越さない（毎日新しく出る。やらなかった分は「やったこと」に残る）
 function rollover(){
   const T=todayKey(), lim=dayAt(-14);
-  const xs=S.events.filter(e=>!e.done && !e.start && !isHabit(e) && !isCase(e) && !(isStep(e) && (isWait(e) || !isCurrent(e))) && e.date<T && e.date>=lim).sort((a,b)=>a.date<b.date?-1:1);
+  const xs=S.events.filter(e=>!e.done && e.date && !isHabit(e) && !isCase(e) && !(isStep(e) && !isCurrent(e)) && e.date<T && e.date>=lim).sort((a,b)=>a.date<b.date?-1:1);
   if(!xs.length) return;
   let o=firstOrder(T)-10*xs.length;
-  xs.forEach(e=>{ saveEv({...e, date:T, order:o, carried:e.carried||e.date}); o+=10; });
+  xs.forEach(e=>{
+    const u={...e, date:T, order:o, carried:e.carried||e.date};
+    if(e.start){ const m=e.end? Math.max(5,toMin(e.end)-toMin(e.start)) : 60; u.start=""; u.end=""; if(!isWait(e)) u.color=String(m); }
+    saveEv(u); o+=10;
+  });
 }
 function dailyMaintenance(){ ensureCases(); rollover(); ensureDaily(); }
 function previewTomorrow(){
@@ -801,6 +809,17 @@ function celebrate(){
 
 function countUp(node, to, ms=700){ const t0=performance.now(); const f=t=>{ const p=Math.min(1,(t-t0)/ms); node.textContent=Math.round(to*(1-Math.pow(1-p,3))).toLocaleString(); if(p<1) requestAnimationFrame(f); }; requestAnimationFrame(f); }
 
+function missedOn(k){
+  return S.events.filter(e=>e.date===k && !isCase(e) && !isDone(e) && !(isStep(e) && (isWait(e) || !isCurrent(e)))).sort((a,b)=>ord(a)-ord(b));
+}
+// あとからチェック：その日にやったことにする
+function retroDone(e,k,ev){
+  saveEv({...e, done:k+" 23:59"});
+  if(isHabit(e)){ const h=habitOf(e); queue("rec|"+k+"|"+e.rule.slice(2),"upsert",{date:k,id:e.rule.slice(2),name:h?h.name:e.title,mark:"o",note:e.note||""}); }
+  if(ev) xpPop(ev.clientX-10, ev.clientY-30, "+"+xpOf(e)+" XP");
+  if(navigator.vibrate) navigator.vibrate(8);
+  update(); setTimeout(celebrate, 350);
+}
 function viewPast(app){
   const g=gameStats(), L=g.lv;
   // レベルのカード
@@ -833,7 +852,8 @@ function viewPast(app){
   // 日ごとのリスト
   let any=false;
   for(let i=0;i<60;i++){
-    const k=dayAt(-i), d=g.byK[k]; if(!d || !d.xs.length) continue; any=true;
+    const k=dayAt(-i), d=g.byK[k]||{xs:[],xp:0,pf:false}; const ms= i>0 ? missedOn(k) : [];
+    if(!d.xs.length && !ms.length) continue; any=true;
     const h=el("div","day-h"); h.id="d-"+k; h.append(el("b",null,(i===0?"今日":i===1?"昨日":md(k))+" "+wd(k)), el("span","dxp","+"+d.xp+" XP")); if(d.pf) h.appendChild(el("span","pf","💯")); app.appendChild(h);
     const l=el("div","list pastlist");
     d.xs.forEach(e=>{
@@ -841,6 +861,13 @@ function viewPast(app){
       const r=row({...e, done:e.done||k}); if(e.legacy){ r.onclick=null; r.querySelector(".chk").onclick=ev=>ev.stopPropagation(); }
       r.appendChild(el("span","xpc","+"+xpOf(e))); l.appendChild(r); });
     app.appendChild(l);
+    if(ms.length){
+      const mh=el("div","missh"); mh.append(svg("x"), document.createTextNode("やらなかった "+ms.length)); app.appendChild(mh);
+      const ml=el("div","list");
+      ms.forEach(e=>{ const r=row(e); r.classList.add("missed"); if(isSkip(e)) r.appendChild(el("span","skipc","スキップ"));
+        r.querySelector(".chk").onclick=ev=>{ ev.stopPropagation(); retroDone(e,k,ev); }; ml.appendChild(r); });
+      app.appendChild(ml);
+    }
   }
   if(!any) app.appendChild(emptyBox("まだ記録がない。今日の1つ目でレベルが上がり始める"));
   updater=()=>render();
