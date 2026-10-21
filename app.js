@@ -40,6 +40,10 @@ const ICON = {
   bell: IC('<path d="M6 8a6 6 0 1 1 12 0c0 7 3 8 3 8H3s3-1 3-8"/><path d="M10 20a2 2 0 0 0 4 0"/>'),
   up: IC('<path d="m6 15 6-6 6 6"/>'),
   x: IC('<path d="M6 6l12 12M18 6 6 18"/>'),
+  image: IC('<rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="10" r="2"/><path d="m21 17-5-5-9 9"/>'),
+  compose: IC('<path d="M12 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6"/><path d="M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4z"/>'),
+  pin: IC('<path d="M9 4h6l-1 6 4 3H6l4-3z"/><path d="M12 13v8"/>'),
+  memo: IC('<rect x="4" y="3" width="16" height="18" rx="3"/><path d="M8 8h8M8 12h8M8 16h5"/>'),
   sun: IC('<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>')
 };
 
@@ -61,7 +65,7 @@ const DEFAULT_ITEMS = [
 // events：日付のついたタスク（予定タブ）。習慣も繰り返しも、その日の分はここに1行として入る
 //   rule が "h:習慣ID" → 習慣の分（ID は h_習慣ID_日付）／ rule が繰り返しID → 繰り返しの分（ID は r_ルールID_日付）
 //   done が "スキップ" → その日の分は飛ばした
-let S = { items: DEFAULT_ITEMS.map(x=>({...x})), days:{}, events:[], life:[] };
+let S = { items: DEFAULT_ITEMS.map(x=>({...x})), days:{}, events:[], life:[], memos:[] };
 let pending = [];
 let syncState = "ok";
 
@@ -76,11 +80,22 @@ function setSync(s){ syncState=s; const d=$("syncdot"); if(d) d.className="sync"
 
 function applyOp(op){
   const p=op.p;
-  if(op.a==="saveEvent"){ const i=S.events.findIndex(x=>x.id===p.item.id); if(i>=0) S.events[i]=p.item; else S.events.push(p.item); }
+  if(op.a==="saveEvent"){
+    const i=S.events.findIndex(x=>x.id===p.item.id); const cur=i>=0?S.events[i]:null;
+    const it={}; Object.keys(p.item).forEach(k=>{ if(k[0]!=="_") it[k]=p.item[k]; });
+    if(cur){
+      if(p.item._create) return;                                   // もうあるなら作り直さない
+      if(p.item._ifUndone && cur.done) return;                      // 完了済みには触らない
+      if(cur.done && !it.done && !p.item._undo) it.done=cur.done;   // 古い送信で未完了に戻さない
+      S.events[i]=it;
+    } else S.events.push(it);
+  }
   else if(op.a==="delEvent"){ S.events=S.events.filter(x=>x.id!==p.id); }
   else if(op.a==="saveItems"){ S.items=p.items.slice(); }
   else if(op.a==="saveLife"){ S.life=p.life.slice(); }
-  else if(op.a==="upsert"){ const r={...(S.days[p.date]||{})}; if(p.mark) r[p.id]=p.mark; else delete r[p.id]; if(p.note) r["n_"+p.id]=p.note; else delete r["n_"+p.id]; S.days[p.date]=r; }
+  else if(op.a==="saveMemo"){ S.memos=S.memos||[]; const i=S.memos.findIndex(x=>x.id===p.memo.id); if(i>=0) S.memos[i]={...p.memo}; else S.memos.push({...p.memo}); }
+  else if(op.a==="delMemo"){ S.memos=(S.memos||[]).filter(x=>x.id!==p.id); }
+  else if(op.a==="upsert"){ const r={...(S.days[p.date]||{})}; if(p.mark) r[p.id]=p.mark; else if(!(r[p.id]==="o" && !p._undo)) delete r[p.id]; if(p.note) r["n_"+p.id]=p.note; else delete r["n_"+p.id]; S.days[p.date]=r; }
 }
 let flushTimer=null;
 function queue(k, a, p){
@@ -102,24 +117,27 @@ async function flush(){
   try{
     while(pending.length){
       const op=pending[0];
-      try{ await api({action:op.a, ...op.p}); }
+      try{ await api({action:op.a, ...op.p}); lastSentAt=Date.now(); }
       catch(e){ setSync("err"); setTimeout(flush, 15000); return; }
       pending = pending.filter(x=>x!==op);
       saveLocal();
     }
     setSync("ok");
+    uploadImages();
   } finally { flushing=false; }
 }
-let lastLoad=0;
+let lastLoad=0, lastSentAt=0;
 async function pull(){
+  const t0=Date.now();
   if(!ONLINE){ setSync("err"); dailyMaintenance(); update(); return; }
   try{
     const url = CFG.API_URL+"?action=load&key="+encodeURIComponent(CFG.KEY)+"&since="+dayAt(-120);
     const j = await (await fetch(url)).json();
     if(!j.ok) throw new Error(j.error);
+    if(lastSentAt>t0 || flushing){ setTimeout(pull, 1500); return; }   // 読み込み中に送った分が入っていない古い結果なので読み直す
     const days={};
     (j.records||[]).forEach(r=>{ days[r.date]=days[r.date]||{}; if(r.mark) days[r.date][r.id]=r.mark; if(r.note) days[r.date]["n_"+r.id]=r.note; });
-    S.days=days; S.events=j.events||[]; S.life=j.life||[];
+    S.days=days; S.events=j.events||[]; S.life=j.life||[]; S.memos=j.memos||[];
     const needItems = !(Array.isArray(j.items)&&j.items.length);
     if(!needItems) S.items=j.items;
     pending.forEach(applyOp);
@@ -166,18 +184,25 @@ function ensureCases(){
     if(!h.done && st.length && st.every(s=>s.done)){ saveEv({...h, done:stamp()}); return; }
     if(h.done && st.some(s=>!s.done)){ saveEv({...h, done:""}); }
     const c=st.find(s=>!s.done);
-    if(c && !isWait(c) && !c.date) saveEv({...c, date:T, order:nextOrder(T)});
+    if(c && !isWait(c) && !c.date) saveEv({...c, date:T, order:nextOrder(T)}, {ifUndone:true});
   });
 }
 const on = k => S.events.filter(e=>e.date===k && !isSkip(e) && !isCase(e) && (!isStep(e) || e.done || isCurrent(e)));
-function saveEv(e){ queue("ev|"+e.id,"saveEvent",{item:{...e}}); }
+// opt.create：無いときだけ作る／opt.ifUndone：未完了のときだけ変える。完了を外すときは自動で _undo を付ける
+function saveEv(e, opt={}){
+  const prev=S.events.find(x=>x.id===e.id); const item={...e};
+  if(prev && prev.done && !item.done) item._undo=true;
+  if(opt.create) item._create=true;
+  if(opt.ifUndone) item._ifUndone=true;
+  queue("ev|"+e.id,"saveEvent",{item});
+}
 function nextOrder(k){ const xs=S.events.filter(e=>e.date===k).map(ord).filter(x=>x<1e9); return xs.length? Math.max(...xs)+10 : 10; }
 function firstOrder(k){ const xs=S.events.filter(e=>e.date===k).map(ord).filter(x=>x<1e9); return xs.length? Math.min(...xs)-10 : 10; }
 function toggleDone(e, ev){
   const nd = isDone(e) ? "" : stamp();
   if(nd){ const x=ev&&ev.clientX? ev.clientX : innerWidth/2, y=ev&&ev.clientY? ev.clientY : innerHeight/2; xpPop(x-10, y-30, "+"+xpOf(e)+" XP"); }
   saveEv({...e, done:nd});
-  if(isHabit(e)){ const h=habitOf(e); queue("rec|"+e.date+"|"+e.rule.slice(2),"upsert",{date:e.date,id:e.rule.slice(2),name:h?h.name:e.title,mark:nd?"o":"",note:e.note||""}); }
+  if(isHabit(e)){ const h=habitOf(e); queue("rec|"+e.date+"|"+e.rule.slice(2),"upsert",{date:e.date,id:e.rule.slice(2),name:h?h.name:e.title,mark:nd?"o":"",note:e.note||"",_undo:!nd}); }
   if(nd && navigator.vibrate) navigator.vibrate(8);
   if(isStep(e)) ensureCases();
   update();
@@ -212,9 +237,9 @@ function ensureDaily(){
     if(S.events.some(e=>e.id===habitInst(h.id,T))) return;
     if(!habitDue(h,T)) return;
     const rec=S.days[T]||{};
-    saveEv({id:habitInst(h.id,T), date:T, start:"", end:"", title:h.name, tag:habitTag(h.id), note:rec["n_"+h.id]||"", color:"", done:rec[h.id]==="o"?stamp():"", steps:"", order:nextOrder(T), rule:"h:"+h.id});
+    saveEv({id:habitInst(h.id,T), date:T, start:"", end:"", title:h.name, tag:habitTag(h.id), note:rec["n_"+h.id]||"", color:"", done:rec[h.id]==="o"?stamp():"", steps:"", order:nextOrder(T), rule:"h:"+h.id}, {create:true});
   });
-  S.life.forEach(it=>{ if(ruleDueOn(it,T)) saveEv({id:ruleInst(it.id,T), date:T, start:"", end:"", title:it.name, tag:it.tag||"ライフ", note:it.note||"", color:"", done:"", steps:"", order:nextOrder(T), rule:it.id}); });
+  S.life.forEach(it=>{ if(ruleDueOn(it,T)) saveEv({id:ruleInst(it.id,T), date:T, start:"", end:"", title:it.name, tag:it.tag||"ライフ", note:it.note||"", color:"", done:"", steps:"", order:nextOrder(T), rule:it.id}, {create:true}); });
 }
 // 前の日に終わらなかった「時間なし」のタスクは今日の先頭へ（習慣・時間の予定は移さない）
 // 前の日に終わらなかったものは、0時をまたいだら今日の先頭へ持ち越す（消さない）
@@ -229,7 +254,7 @@ function rollover(){
   xs.forEach(e=>{
     const u={...e, date:T, order:o, carried:e.carried||e.date};
     if(e.start){ const m=e.end? Math.max(5,toMin(e.end)-toMin(e.start)) : 60; u.start=""; u.end=""; if(!isWait(e)) u.color=String(m); }
-    saveEv(u); o+=10;
+    saveEv(u, {ifUndone:true}); o+=10;
   });
 }
 function dailyMaintenance(){ ensureCases(); rollover(); ensureDaily(); }
@@ -263,14 +288,16 @@ let R = "todo";
 const calState = { view:"day", date: todayKey() };
 let openDone = false;
 let drag = null;
-function parseRoute(){ const h=location.hash.replace(/^#\/?/,"").split("/")[0]; R = ["todo","cal","past"].includes(h)? h : "todo"; }
-window.addEventListener("hashchange", ()=>{ parseRoute(); openDone=false; render(); window.scrollTo(0,0); });
+let memoId=null, memoLeave=null;
+function parseRoute(){ const parts=location.hash.replace(/^#\/?/,"").split("/"); const h=parts[0]; R = ["todo","cal","past","memo"].includes(h)? h : "todo"; memoId = (R==="memo" && parts[1]) ? decodeURIComponent(parts[1]) : null; }
+window.addEventListener("hashchange", ()=>{ if(memoLeave){ const f=memoLeave; memoLeave=null; f(); } parseRoute(); openDone=false; render(); window.scrollTo(0,0); });
 
 let updater=null;
 function render(){
   const app=$("app"); app.innerHTML=""; $("fab").hidden=true; updater=null;
   document.querySelectorAll("#tabs a").forEach(a=>a.classList.toggle("on", a.dataset.r===R));
-  ({todo:viewTodo, cal:viewCal, past:viewPast}[R])(app);
+  document.body.classList.toggle("memoedit", R==="memo" && !!memoId);
+  ({todo:viewTodo, cal:viewCal, past:viewPast, memo:(a)=> memoId ? viewMemoEdit(a, memoId) : viewMemoList(a)}[R])(app);
 }
 function update(){ if(updater) updater(); else render(); }
 
@@ -284,7 +311,7 @@ function row(e, opts={}){
   if(isTimed(e)) r.appendChild(el("span","time", e.start));
   else if(blockMin(e)) r.appendChild(el("span","time blk", fmtDur(blockMin(e))));
   const tbx=titleBox(e);
-  if(isStep(e)){ const h=caseHeader(caseIdOf(e)); const st=caseSteps(caseIdOf(e)); const cl=el("div","case"); cl.appendChild(svg("folder")); cl.appendChild(document.createTextNode((h?h.title:"案件")+"  "+(st.findIndex(s=>s.id===e.id)+1)+"/"+st.length)); tbx.insertBefore(cl, tbx.firstChild); }
+  if(isStep(e)){ const h=caseHeader(caseIdOf(e)); const st=caseSteps(caseIdOf(e)); const cl=el("div","case"); cl.appendChild(svg("folder")); cl.appendChild(document.createTextNode((h?h.title:"案件")+"  "+(st.findIndex(s=>s.id===e.id)+1)+"/"+st.length)); cl.onclick=ev=>{ ev.stopPropagation(); if(r._dragged) return; openCase(caseIdOf(e)); }; tbx.insertBefore(cl, tbx.firstChild); }
   if(e.note && String(e.note).trim()) tbx.appendChild(el("div","memo",String(e.note).trim()));
   r.appendChild(tbx);
   const ic=el("span","ico");
@@ -293,7 +320,7 @@ function row(e, opts={}){
   else if(e.rule && !isStep(e)) ic.appendChild(svg("repeat"));
   if(e.carried && !e.done) ic.appendChild(svg("back"));
   if(ic.childNodes.length) r.appendChild(ic);
-  r.onclick=()=>{ if(r._dragged) return; if(isStep(e)) openCase(caseIdOf(e)); else openItem(e.id); };
+  r.onclick=()=>{ if(r._dragged) return; openItem(e.id); };
   return r;
 }
 function previewRow(p){
@@ -462,7 +489,8 @@ function openItem(id, preset={}){
   const T=todayKey();
   let e=ex?{...ex}:{id:uid(), date:preset.date||T, start:"", end:"", title:preset.title||"", tag:lastTag, note:"", color:"", done:"", steps:"", order:"", rule:""};
   if(!ex && preset.start){ e.start=preset.start; e.end=preset.end||""; }
-  const h=ex?habitOf(ex):null, ru=ex?ruleOf(ex):null;
+  const h=ex?habitOf(ex):null, ru=(ex && !isStep(ex))?ruleOf(ex):null;
+  const st=!!(ex && isStep(ex)); let waitK = ex ? isWait(ex) : false;
   // くり返し：none / daily / interval / weekly
   let rep = h ? (h.freq==="weekly"?"interval":"daily") : ru ? ru.kind : "none";
   let every = h ? 7 : ru && ru.kind==="interval" ? (Number(ru.every)||7) : 7;
@@ -471,6 +499,9 @@ function openItem(id, preset={}){
   let timed=!!e.start;
 
   const sh=openSheet();
+  if(st){ const hd=caseHeader(caseIdOf(ex)); const ss=caseSteps(caseIdOf(ex)); const cb=el("button","casebar"); cb.type="button";
+    cb.append(svg("folder"), el("span",null,(hd?hd.title:"案件")+"　"+(ss.findIndex(s=>s.id===ex.id)+1)+"/"+ss.length), svg("right"));
+    cb.onclick=()=>{ closeSheet(); openCase(caseIdOf(ex)); }; sh.appendChild(cb); }
   const ifRow=el("div","ifrow"); const ifB=el("b",null,"IF"); const ifIn=el("input"); ifIn.type="text"; ifIn.placeholder="いつ？（例：風呂から出たら）※なくてもいい"; ifIn.value=it0.if; ifRow.append(ifB, ifIn); sh.appendChild(ifRow);
   const ttlRow=el("div","ttlrow"); const thB=el("b",null,"THEN"); const ttl=el("input","ttl"); ttl.placeholder="やること"; ttl.value=it0.then; ttlRow.append(thB, ttl); sh.appendChild(ttlRow);
   const paintIT=()=>{ const has=!!ifIn.value.trim(); thB.hidden=!has; }; ifIn.oninput=paintIT; paintIT();
@@ -480,7 +511,7 @@ function openItem(id, preset={}){
   const l1=ln("tag"); const tg=chipGroup(()=>[...allTags().map(t=>({v:t,t,dot:tagColor(t)})),{v:"__new",t:"＋"}], e.tag, v=>{ e.tag=v; }); l1.appendChild(tg.box); b1.appendChild(l1);
   // 日付
   const l2=ln("cal"); const dIn=el("input"); dIn.type="date"; dIn.value=e.date;
-  const dg=chipGroup(()=>[{v:T,t:"今日"},{v:dayAt(1),t:"明日"}], e.date, v=>{ e.date=v; dIn.value=v; });
+  const dg=chipGroup(()=>[{v:T,t:"今日"},{v:dayAt(1),t:"明日"}, ...(st?[{v:"",t:"日付なし"}]:[])], e.date, v=>{ e.date=v; dIn.value=v; });
   dIn.onchange=()=>{ e.date=dIn.value||e.date; dg.set(e.date); };
   l2.classList.add("wrap"); l2.append(dg.box, dIn); b1.appendChild(l2);
   // 時間
@@ -503,6 +534,7 @@ function openItem(id, preset={}){
   };
   sIn.onchange=()=>{ const s=toMin(sIn.value), en=toMin(eIn.value); if(s!=null && (en==null||en<=s)){ const x=Math.min(s+60,1439); eIn.value=pad(Math.floor(x/60))+":"+pad(x%60); } };
   tcol.append(mbox, trow, drow); l3.appendChild(tcol); b1.appendChild(l3); paintT();
+  if(st){ const lk=ln("play"); const kg=chipGroup(()=>[{v:"do",t:"▶ やる"},{v:"wait",t:"⏸ 待つ（相手待ち）"}], waitK?"wait":"do", v=>{ waitK=(v==="wait"); }); lk.appendChild(kg.box); b1.appendChild(lk); }
   sh.appendChild(b1);
 
   // くり返し
@@ -516,14 +548,15 @@ function openItem(id, preset={}){
     if(rep==="interval"){ const n=el("input"); n.type="number"; n.min="1"; n.inputMode="numeric"; n.value=every; n.oninput=()=>{ every=Math.max(1,parseInt(n.value,10)||1); }; l5.append(n, el("span","lab","日ごと（前回やった日から）")); }
     if(rep==="weekly"){ const c=el("div","chips"); WDN.forEach(d=>{ const b=el("button","chip"+(wds.has(d)?" on":""),d); b.type="button"; b.onclick=()=>{ wds.has(d)?wds.delete(d):wds.add(d); paintR(); }; c.appendChild(b); }); l5.appendChild(c); }
   };
-  paintR(); sh.appendChild(b2);
+  paintR(); sh.appendChild(b2); if(st) b2.hidden=true;
 
   // メモ
   const b3=el("div","blk"); const l7=ln("note"); const nIn=el("textarea"); nIn.placeholder="メモ"; nIn.value=e.note||""; nIn.oninput=()=>autoGrow(nIn); l7.appendChild(nIn); b3.appendChild(l7); sh.appendChild(b3); requestAnimationFrame(()=>autoGrow(nIn));
 
   const acts=el("div","acts");
   if(ex){ const del=el("button","del"); del.appendChild(svg("trash")); del.onclick=()=>{
-      if(e.rule){ if(!confirm("この日の分を消す？（くり返しは続く）")) return; saveEv({...ex, done:"スキップ"}); }
+      if(st){ if(!confirm("このステップを消す？")) return; queue("ev|"+e.id,"delEvent",{id:e.id}); ensureCases(); }
+      else if(e.rule){ if(!confirm("この日の分を消す？（くり返しは続く）")) return; saveEv({...ex, done:"スキップ"}); }
       else { if(!confirm("消す？")) return; queue("ev|"+e.id,"delEvent",{id:e.id}); }
       closeSheet(); update(); }; acts.appendChild(del); }
   const save=el("button","save","保存"); acts.appendChild(save); sh.appendChild(acts);
@@ -535,9 +568,10 @@ function openItem(id, preset={}){
     const ifv=ifIn.value.trim();
     setLastTag(e.tag||lastTag);
     const title=joinIT(ifv, then);
-    const kind = isWait(e) ? "待つ" : (tmode==="block" ? String(dur) : "");
+    const kind = st ? (waitK ? "待つ" : (tmode==="block" ? String(dur) : "")) : (isWait(e) ? "待つ" : (tmode==="block" ? String(dur) : ""));
     let item={...e, title, start:tmode==="time"?sIn.value:"", end:tmode==="time"?eIn.value:"", color:kind, note:nIn.value};
     if(!ex || ex.date!==item.date) item.order = ex ? nextOrder(item.date) : (item.date===T||item.date===dayAt(1) ? nextOrder(item.date) : "");
+    if(st){ if(!item.date) item.order=""; saveEv(item); closeSheet(); ensureCases(); update(); return; }
     const oldKind = h ? "habit" : ru ? "rule" : "none";
     const wantHabit = rep==="daily" || (rep==="interval" && h && h.freq==="weekly" && every===7);
     const wantRule = !wantHabit && (rep==="interval"||rep==="weekly");
@@ -603,6 +637,7 @@ function openCase(cid, preset={}){
       if(!s.note && !s._noteOpen){ const nb=el("button","sbtn"); nb.type="button"; nb.appendChild(svg("note")); nb.onclick=()=>{ s._noteOpen=true; paint(); setTimeout(()=>{ const n=box.querySelectorAll(".stp")[i].querySelector(".snote"); if(n) n.focus(); },20); }; meta.appendChild(nb); }
       meta.appendChild(el("span","sp"));
       if(i>0){ const u=el("button","sbtn"); u.type="button"; u.appendChild(svg("up")); u.onclick=()=>{ [draft[i-1],draft[i]]=[draft[i],draft[i-1]]; paint(); }; meta.appendChild(u); }
+      const ob=el("button","sbtn sopen"); ob.type="button"; ob.title="日付・時間・メモを編集"; ob.appendChild(svg("right")); ob.onclick=()=>{ if(!s.title.trim()) return; if(commit()===false) return; closeSheet(); update(); openItem(s.id); }; meta.appendChild(ob);
       const x=el("button","sbtn"); x.type="button"; x.appendChild(svg("x")); x.onclick=()=>{ removed.push(...draft.splice(i,1).filter(z=>S.events.some(e=>e.id===z.id))); paint(); }; meta.appendChild(x);
       bd.appendChild(meta);
       if(s.note || s._noteOpen){ const nt=el("textarea","snote"); nt.rows=1; nt.placeholder="メモ"; nt.value=s.note||""; nt.oninput=()=>{ s.note=nt.value; autoGrow(nt); }; bd.appendChild(nt); }
@@ -626,14 +661,15 @@ function openCase(cid, preset={}){
       caseSteps(id).forEach(s=>queue("ev|"+s.id,"delEvent",{id:s.id})); queue("ev|"+id,"delEvent",{id}); closeSheet(); update(); }; acts.appendChild(del); }
   const save=el("button","save","保存"); acts.appendChild(save); sh.appendChild(acts);
   if(!ex) setTimeout(()=>ttl.focus(),60);
-  save.onclick=()=>{
-    const title=ttl.value.trim(); if(!title){ closeSheet(); return; }
+  const commit=()=>{
+    const title=ttl.value.trim(); if(!title) return false;
     setLastTag(head.tag||lastTag);
     saveEv({...head, title, note:nIn.value});
-    removed.forEach(s=>queue("ev|"+s.id,"delEvent",{id:s.id}));
+    removed.splice(0).forEach(s=>queue("ev|"+s.id,"delEvent",{id:s.id}));
     draft.filter(s=>s.title.trim()).forEach((s,i)=>{ const {_noteOpen, ...clean}=s; saveEv({...clean, title:s.title.trim(), tag:head.tag, steps:String(i+1), rule:"c:"+id}); });
-    ensureCases(); closeSheet(); update();
+    ensureCases(); return true;
   };
+  save.onclick=()=>{ commit(); closeSheet(); update(); };
 }
 
 /* ================= カレンダー ================= */
@@ -873,10 +909,175 @@ function viewPast(app){
   updater=()=>render();
 }
 
+/* ================= メモ ================= */
+const MEMO_PX={S:15,M:17,L:21};
+const mdStrip=l=>l.replace(/^#{1,3}\s+|^\s*[-*•]\s+\[[ xX]\]\s+|^\s*[-*•]\s+|^\s*\d+\.\s+|^>\s*/,"").replace(/\*\*|`/g,"");
+const memoLines=m=>String(m.body||"").split("\n").map(x=>x.trim()).filter(x=>x && !/^!\[\]\(img:/.test(x));
+const memoTitle=m=>{ const l=memoLines(m)[0]; return l? mdStrip(l) : "新規メモ"; };
+const memoPreview=m=>{ const l=memoLines(m)[1]; return l? mdStrip(l) : ""; };
+const memoHasImg=m=>/!\[\]\(img:/.test(m.body||"");
+function saveMemo(m){ m.updated=stamp(); queue("memo|"+m.id,"saveMemo",{memo:{id:m.id, body:m.body||"", size:m.size||"M", pin:m.pin||"", created:m.created||stamp(), updated:m.updated}}); }
+
+// 画像：端末の中（IndexedDB）に置き、サーバーには「画像」タブに分けて保存
+const IDB=(()=>{ let db=null;
+  const open=()=>db?Promise.resolve(db):new Promise((res,rej)=>{ const r=indexedDB.open("mainichi",1); r.onupgradeneeded=()=>{ r.result.createObjectStore("img"); r.result.createObjectStore("up"); }; r.onsuccess=()=>{ db=r.result; res(db); }; r.onerror=()=>rej(r.error); });
+  const op=(store,mode,fn)=>open().then(d=>new Promise((res,rej)=>{ const tx=d.transaction(store,mode); const q=fn(tx.objectStore(store)); tx.oncomplete=()=>res(q?q.result:undefined); tx.onerror=()=>rej(tx.error); }));
+  return { get:(s,k)=>op(s,"readonly",st=>st.get(k)), put:(s,k,v)=>op(s,"readwrite",st=>st.put(v,k)), del:(s,k)=>op(s,"readwrite",st=>st.delete(k)), keys:(s)=>op(s,"readonly",st=>st.getAllKeys()) };
+})();
+async function compressImage(file){
+  const url=URL.createObjectURL(file);
+  const img=await new Promise((res,rej)=>{ const i=new Image(); i.onload=()=>res(i); i.onerror=rej; i.src=url; });
+  const max=1280, sc=Math.min(1, max/Math.max(img.naturalWidth, img.naturalHeight));
+  const c=document.createElement("canvas"); c.width=Math.round(img.naturalWidth*sc); c.height=Math.round(img.naturalHeight*sc);
+  c.getContext("2d").drawImage(img,0,0,c.width,c.height); URL.revokeObjectURL(url);
+  return c.toDataURL("image/jpeg",0.75);
+}
+let uploading=false;
+async function uploadImages(){
+  if(!ONLINE || uploading) return; uploading=true;
+  try{ const ks=await IDB.keys("up"); for(const id of ks){ const d=await IDB.get("up",id); if(!d){ await IDB.del("up",id); continue; }
+      try{ await api({action:"saveImage", id, mime:"image/jpeg", data:String(d).split(",")[1]}); await IDB.del("up",id); }catch(e){ setTimeout(uploadImages,20000); break; } } }
+  catch(e){} finally{ uploading=false; }
+}
+const imgCache={};
+async function imageURL(id){
+  if(imgCache[id]) return imgCache[id];
+  let d=null; try{ d=await IDB.get("img",id); }catch(e){}
+  if(!d && ONLINE){ try{ const j=await api({action:"getImage", id}); if(j.data){ d="data:"+(j.mime||"image/jpeg")+";base64,"+j.data; try{ await IDB.put("img",id,d); }catch(e){} } }catch(e){} }
+  if(d) imgCache[id]=d; return d||"";
+}
+function pickImage(cb){
+  const inp=document.createElement("input"); inp.type="file"; inp.accept="image/*";
+  inp.onchange=async()=>{ const f=inp.files&&inp.files[0]; if(!f) return; try{ const d=await compressImage(f); const id="img"+uid(); imgCache[id]=d; try{ await IDB.put("img",id,d); await IDB.put("up",id,d); }catch(e){} cb(id); uploadImages(); }catch(e){ alert("画像を読み込めなかった"); } };
+  inp.click();
+}
+
+// マークダウンの表示（見出し・箇条書き・番号・チェック・引用・区切り・太字・斜体・コード・リンク・画像）
+function mdEsc(s){ return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function mdInline(s){
+  let h=mdEsc(s);
+  h=h.replace(/`([^`]+)`/g,"<code>$1</code>").replace(/\*\*([^*]+)\*\*/g,"<b>$1</b>").replace(/(^|[^*\w])\*([^*\s][^*]*?)\*(?!\*)/g,"$1<i>$2</i>");
+  h=h.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g,'<a href="$2" target="_blank" rel="noopener">$1</a>');
+  h=h.replace(/(^|[\s(（])(https?:\/\/[^\s<）)]+)/g,'$1<a href="$2" target="_blank" rel="noopener">$2</a>');
+  return h;
+}
+function renderMd(box, src, onToggle){
+  box.innerHTML=""; let para=null;
+  String(src||"").split("\n").forEach((raw,i)=>{
+    const line=raw.replace(/\s+$/,""); let m;
+    if(!line.trim()){ para=null; return; }
+    if((m=line.trim().match(/^!\[\]\(img:([\w-]+)\)$/))){ para=null; const fig=el("div","mimg"); const im=el("img"); im.alt=""; fig.appendChild(im); box.appendChild(fig); imageURL(m[1]).then(u=>{ if(u) im.src=u; else fig.classList.add("missing"); }); return; }
+    if((m=line.match(/^(#{1,3})\s+(.*)$/))){ para=null; const h=el("div","mh"+m[1].length); h.innerHTML=mdInline(m[2]); box.appendChild(h); return; }
+    if(/^\s*(-{3,}|\*{3,})\s*$/.test(line)){ para=null; box.appendChild(el("hr","mhr")); return; }
+    if((m=line.match(/^(\s*)[-*•]\s+\[([ xX])\]\s*(.*)$/))){ para=null; const it=el("div","mli mcl"+(m[2]!==" "?" done":"")); it.style.marginLeft=(Math.floor(m[1].length/2)*20)+"px";
+      const cb=el("button","mchk"); cb.type="button"; cb.appendChild(svg("check")); cb.onclick=ev=>{ ev.stopPropagation(); onToggle && onToggle(i); };
+      const tx=el("span","mt"); tx.innerHTML=mdInline(m[3]); it.append(cb,tx); box.appendChild(it); return; }
+    if((m=line.match(/^(\s*)([-*•]|\d+\.)\s+(.*)$/))){ para=null; const it=el("div","mli"); it.style.marginLeft=(Math.floor(m[1].length/2)*20)+"px";
+      it.append(el("span","mk", /\d/.test(m[2])? m[2] : "•")); const tx=el("span","mt"); tx.innerHTML=mdInline(m[3]); it.appendChild(tx); box.appendChild(it); return; }
+    if((m=line.match(/^>\s?(.*)$/))){ para=null; const q=el("div","mq"); q.innerHTML=mdInline(m[1]); box.appendChild(q); return; }
+    if(!para){ para=el("div","mp"); para.innerHTML=mdInline(line); box.appendChild(para); } else para.innerHTML+="<br>"+mdInline(line);
+  });
+  if(!box.childNodes.length) box.appendChild(el("div","mp mempty","タップして書く"));
+}
+
+function viewMemoList(app){
+  const top=el("div","top"); const dt=el("div","date"); const cnt=el("span"); dt.append(el("b",null,"メモ"), cnt); top.appendChild(dt); app.appendChild(top);
+  const q=el("input","msearch"); q.type="search"; q.placeholder="検索"; app.appendChild(q);
+  const box=el("div"); app.appendChild(box);
+  const paint=()=>{
+    box.innerHTML=""; const s=q.value.trim().toLowerCase(); const T=todayKey();
+    const all=(S.memos||[]).filter(m=>String(m.body||"").trim()); cnt.textContent=all.length+"件";
+    const ms=all.filter(m=>!s || String(m.body).toLowerCase().includes(s)).sort((a,b)=>String(b.updated||"").localeCompare(String(a.updated||"")));
+    const groups=[]; const add=(name,m)=>{ let g=groups.find(x=>x.name===name); if(!g){ g={name,items:[]}; groups.push(g); } g.items.push(m); };
+    ms.filter(m=>m.pin==="1").forEach(m=>add("ピン留め",m));
+    ms.filter(m=>m.pin!=="1").forEach(m=>{ const d=String(m.updated||"").slice(0,10); const df=/^\d{4}-\d{2}-\d{2}$/.test(d)? dayDiff(d,T) : 999;
+      add(df<=0?"今日":df===1?"昨日":df<=7?"過去7日間":df<=30?"過去30日間":(df<999? d.slice(0,4)+"年"+Number(d.slice(5,7))+"月" : "以前"), m); });
+    if(!ms.length) box.appendChild(emptyBox(s?"見つからない":"右下のボタンで新しいメモ"));
+    groups.forEach(g=>{ const gh=el("div","mgh"); if(g.name==="ピン留め") gh.appendChild(svg("pin")); gh.appendChild(document.createTextNode(g.name)); box.appendChild(gh);
+      const card=el("div","mlist");
+      g.items.forEach(m=>{ const it=el("button","mitem"); it.type="button"; const tx=el("div","mtx"); tx.appendChild(el("b",null,memoTitle(m)));
+        const sub=el("div","msub"); const u=String(m.updated||""); sub.appendChild(el("span","mdate", u.slice(0,10)===T ? u.slice(11,16) : md(u.slice(0,10)||T))); sub.appendChild(document.createTextNode(memoPreview(m)||"追加テキストなし"));
+        tx.appendChild(sub); it.appendChild(tx); if(memoHasImg(m)) it.appendChild(svg("image"));
+        it.onclick=()=>{ location.hash="#/memo/"+encodeURIComponent(m.id); }; card.appendChild(it); });
+      box.appendChild(card); });
+  };
+  q.oninput=paint; paint();
+  const f=$("fab"); f.hidden=false; f.innerHTML=""; f.appendChild(svg("compose"));
+  f.onclick=()=>{ const id="m"+uid(); S.memos=S.memos||[]; S.memos.push({id, body:"", size:"M", pin:"", created:stamp(), updated:stamp(), _new:true}); location.hash="#/memo/"+id; };
+  updater=paint;
+}
+
+function viewMemoEdit(app, id){
+  const m=(S.memos||[]).find(x=>x.id===id); if(!m){ location.replace("#/memo"); return; }
+  const bar=el("div","mbar");
+  const back=el("button","mback"); back.type="button"; back.append(svg("left"), document.createTextNode("メモ"));
+  const szB=el("button","mbtn2 msz"); szB.type="button";
+  const pinB=el("button","mbtn2"); pinB.type="button"; pinB.appendChild(svg("pin"));
+  const delB=el("button","mbtn2"); delB.type="button"; delB.appendChild(svg("trash"));
+  const modeB=el("button","mdone"); modeB.type="button";
+  bar.append(back, el("span","sp"), szB, pinB, delB, modeB); app.appendChild(bar);
+  const tools=el("div","mtools"); app.appendChild(tools);
+  const dateL=el("div","mdl"); app.appendChild(dateL);
+  const view=el("div","mview"); const ta=el("textarea","medit"); ta.value=m.body||""; ta.placeholder="メモ"; ta.setAttribute("autocapitalize","off");
+  app.append(view, ta);
+  let timer=null, editing=false;
+  const fmtD=u=>{ const s=String(u||""); return s.length>=16 ? Number(s.slice(0,4))+"年"+Number(s.slice(5,7))+"月"+Number(s.slice(8,10))+"日 "+s.slice(11,16) : ""; };
+  const commit=()=>{ clearTimeout(timer); timer=null; if(ta.value!==(m.body||"") ){ m.body=ta.value; delete m._new; saveMemo(m); dateL.textContent=fmtD(m.updated); } };
+  const sched=()=>{ clearTimeout(timer); timer=setTimeout(commit, 700); };
+  const leave=()=>{ commit(); if(!String(m.body||"").trim()){ S.memos=(S.memos||[]).filter(x=>x.id!==m.id); if(!m._new) queue("memo|"+m.id,"delMemo",{id:m.id}); } document.body.classList.remove("memoedit"); };
+  memoLeave=leave;
+  back.onclick=()=>{ location.hash="#/memo"; };
+  const paintSize=()=>{ szB.textContent={S:"小",M:"中",L:"大"}[m.size||"M"]; const px=MEMO_PX[m.size||"M"]; view.style.fontSize=ta.style.fontSize=px+"px"; if(editing) autoGrow(ta); };
+  szB.onclick=()=>{ m.size={S:"M",M:"L",L:"S"}[m.size||"M"]; paintSize(); commit(); if(String(m.body||"").trim()) saveMemo(m); };
+  const paintPin=()=>pinB.classList.toggle("on", m.pin==="1");
+  pinB.onclick=()=>{ m.pin = m.pin==="1"?"":"1"; paintPin(); commit(); if(String(m.body||"").trim()) saveMemo(m); };
+  delB.onclick=()=>{ if(!confirm("このメモを消す？")) return; clearTimeout(timer); S.memos=(S.memos||[]).filter(x=>x.id!==m.id); if(!m._new) queue("memo|"+m.id,"delMemo",{id:m.id}); memoLeave=null; document.body.classList.remove("memoedit"); location.hash="#/memo"; };
+  const toggleCheck=n=>{ const ls=String(m.body||"").split("\n"); const l=ls[n]; if(l==null) return; ls[n]= /\[ \]/.test(l) ? l.replace("[ ]","[x]") : l.replace(/\[[xX]\]/,"[ ]"); m.body=ls.join("\n"); ta.value=m.body; saveMemo(m); renderMd(view, m.body, toggleCheck); if(navigator.vibrate) navigator.vibrate(8); };
+  const setMode=edit=>{ editing=edit; view.hidden=edit; ta.hidden=!edit; tools.hidden=!edit; modeB.textContent=edit?"完了":"編集";
+    if(edit){ requestAnimationFrame(()=>autoGrow(ta)); } else { commit(); renderMd(view, m.body||"", toggleCheck); ta.blur(); } };
+  modeB.onclick=()=>setMode(!editing);
+  view.onclick=ev=>{ if(ev.target.closest("a,button,img")) return; setMode(true); ta.focus(); const n=ta.value.length; ta.setSelectionRange(n,n); };
+  ta.addEventListener("input", ()=>{ autoGrow(ta); sched(); });
+  ta.addEventListener("blur", ()=>commit());
+  // 改行で箇条書き・番号・チェックを続ける。中身が空のまま改行したら終わる
+  ta.addEventListener("keydown", ev=>{
+    if(ev.key!=="Enter" || ev.isComposing || ev.keyCode===229 || ev.shiftKey) return;
+    const pos=ta.selectionStart, v=ta.value, ls=v.lastIndexOf("\n",pos-1)+1, line=v.slice(ls,pos);
+    const mm=line.match(/^(\s*)(- \[[ xX]\] |[-*•] |(\d+)\. )/); if(!mm) return;
+    ev.preventDefault();
+    if(line.slice(mm[0].length).trim()===""){ ta.setRangeText("", ls, pos, "end"); }
+    else { const pre=mm[1]+(mm[3]? (Number(mm[3])+1)+". " : (/\[/.test(mm[2])? "- [ ] " : mm[2])); ta.setRangeText("\n"+pre, pos, ta.selectionEnd, "end"); }
+    autoGrow(ta); sched();
+  });
+  const lineRange=()=>{ const v=ta.value; const s=v.lastIndexOf("\n",ta.selectionStart-1)+1; let e=v.indexOf("\n",ta.selectionEnd); if(e<0) e=v.length; return [s,e]; };
+  const PRE=/^(\s*)(#{1,3} |- \[[ xX]\] |[-*•] |\d+\. |> )/;
+  const setPrefix=(test,pre)=>{ const [s,e]=lineRange(); const ls=ta.value.slice(s,e).split("\n"); const all=ls.every(l=>test.test(l));
+    const out=ls.map((l,i)=>{ const base=l.replace(PRE,"$1"); return all? base : base.replace(/^(\s*)/,"$1"+(pre==="1. "? (i+1)+". " : pre)); }).join("\n");
+    ta.setRangeText(out, s, e, "end"); autoGrow(ta); sched(); };
+  const wrap=(a,b)=>{ const s=ta.selectionStart, e=ta.selectionEnd, t=ta.value.slice(s,e)||"太字"; ta.setRangeText(a+t+b, s, e, "select"); autoGrow(ta); sched(); };
+  const addTool=(content, fn, cls)=>{ const b=el("button","mtool"+(cls?" "+cls:"")); b.type="button"; if(typeof content==="string") b.textContent=content; else b.appendChild(content);
+    let touched=false;
+    b.addEventListener("touchstart", ev=>{ ev.preventDefault(); touched=true; fn(); setTimeout(()=>touched=false, 400); }, {passive:false});
+    b.addEventListener("mousedown", ev=>ev.preventDefault());
+    b.addEventListener("click", ev=>{ if(touched) return; fn(); });
+    tools.appendChild(b); };
+  addTool("見出し", ()=>setPrefix(/^\s*# /,"# "));
+  addTool("•", ()=>setPrefix(/^\s*[-*•] (?!\[)/,"- "), "big");
+  addTool("☑", ()=>setPrefix(/^\s*- \[[ xX]\] /,"- [ ] "), "big");
+  addTool("1.", ()=>setPrefix(/^\s*\d+\. /,"1. "));
+  addTool("B", ()=>wrap("**","**"), "bold");
+  addTool(svg("image"), ()=>{ const s=ta.selectionStart, e=ta.selectionEnd; pickImage(imgId=>{ const v=ta.value; const pre=(s>0 && v[s-1]!=="\n")?"\n":""; ta.setRangeText(pre+"![](img:"+imgId+")\n", s, e, "end"); autoGrow(ta); commit(); }); });
+  dateL.textContent=fmtD(m.updated||m.created);
+  paintSize(); paintPin();
+  setMode(!!m._new || !String(m.body||"").trim());
+  if(editing) setTimeout(()=>ta.focus(), 80);
+  updater=()=>{};
+}
+
 /* ================= 起動 ================= */
 window.addEventListener("online", flush);
 let lastDay=todayKey();
-function onShow(){ if(document.visibilityState!=="visible") return; flush(); if(lastDay!==todayKey()){ lastDay=todayKey(); dailyMaintenance(); update(); } if(Date.now()-lastLoad>20000) pull(); }
+function onShow(){ if(document.visibilityState!=="visible") return; flush(); if(lastDay!==todayKey()){ lastDay=todayKey(); if(ONLINE){ pull(); } else { dailyMaintenance(); update(); } return; } if(Date.now()-lastLoad>20000) pull(); }
 document.addEventListener("visibilitychange", onShow);
 window.addEventListener("focus", onShow);
 window.addEventListener("pageshow", onShow);
@@ -886,5 +1087,6 @@ document.addEventListener("contextmenu", ev=>{ if(ev.target.closest(".row")) ev.
 loadLocal(); parseRoute(); if(!location.hash) history.replaceState(null,"","#/todo");
 render();
 if("serviceWorker" in navigator){ navigator.serviceWorker.register("sw.js").catch(()=>{}); }
+setTimeout(uploadImages, 4000);
 setTimeout(()=>{ try{ const g=gameStats(); if(!lastLv()) setLastLv(g.lv.lv); if(!seenBadges()) setSeen(BADGES.filter(b=>b.v(g)>=b.goal).map(b=>b.id)); }catch(e){} }, 3000);
 pull();

@@ -10,7 +10,10 @@ const T = {
   EV: { name: '予定', h: ['ID', '日付', '開始', '終了', 'タイトル', 'タグ', 'メモ', '色', '完了', 'ステップ', '並び順', '繰り返しID', 'もとの日付', '更新日時'],
         f: ['id', 'date', 'start', 'end', 'title', 'tag', 'note', 'color', 'done', 'steps', 'order', 'rule', 'carried', 'updated'] },
   LIFE: { name: '繰り返し', h: ['ID', '名前', 'タグ', '種類', '間隔（日）', '曜日', 'メモ', '並び順'] },
-  HELP: { name: 'AI向けの説明', h: ['項目', '内容'] }
+  HELP: { name: 'AI向けの説明', h: ['項目', '内容'] },
+  MEMO: { name: 'メモ', h: ['ID', '本文', '文字サイズ', 'ピン', '作成日時', '更新日時'],
+          f: ['id', 'body', 'size', 'pin', 'created', 'updated'] },
+  IMG: { name: '画像', h: ['ID', '種類', '番号', 'データ'] }
 };
 
 const HELP_ROWS = [
@@ -39,10 +42,14 @@ function handle_(p) {
     ensure_();
     switch (p.action) {
       case 'load': return out_({ ok: true, items: loadItems_(), records: loadRecords_(p.since),
-        events: readTable_(T.EV), life: loadLife_() });
+        events: readTable_(T.EV), life: loadLife_(), memos: readTable_(T.MEMO) });
       case 'upsert': upsertRecord_(p); break;
       case 'saveItems': saveItems_(p.items || []); break;
       case 'saveEvent': upsertRow_(T.EV, p.item); break;
+      case 'saveMemo': upsertRow_(T.MEMO, p.memo); break;
+      case 'delMemo': deleteRow_(T.MEMO, p.id); break;
+      case 'saveImage': saveImage_(p.id, p.mime, p.data); break;
+      case 'getImage': return out_(Object.assign({ ok: true }, getImage_(p.id)));
       case 'delEvent': deleteRow_(T.EV, p.id); break;
       case 'saveLife': saveLife_(p.life || []); break;
       default: return out_({ ok: false, error: 'unknown action' });
@@ -64,6 +71,8 @@ function ensure_() {
   sheet_(T.REC); sheet_(T.SET);
   const ev = sheet_(T.EV);
   sheet_(T.LIFE);
+  const mm = sheet_(T.MEMO); const mr = mm.getRange(1, 1, mm.getMaxRows(), mm.getMaxColumns()); if (mr.getNumberFormat() !== '@') mr.setNumberFormat('@');
+  const im = sheet_(T.IMG); const ir = im.getRange(1, 1, im.getMaxRows(), im.getMaxColumns()); if (ir.getNumberFormat() !== '@') ir.setNumberFormat('@');
   const help = sheet_(T.HELP);
   if (help.getLastRow() < 2) help.getRange(2, 1, HELP_ROWS.length, 2).setValues(HELP_ROWS);
   const r = ev.getRange(1, 1, ev.getMaxRows(), ev.getMaxColumns());
@@ -142,15 +151,43 @@ function findRow_(sh, id) {
   return -1;
 }
 
+// 古い送信（別の端末に溜まっていたもの）で、完了した行を未完了に戻さない。
+//   item._create：無いときだけ作る（毎日の分）／item._ifUndone：未完了のときだけ変える（持ち越し・次のステップ）
+//   item._undo：本人が完了を外した（これが無いと「完了」は空で上書きされない）
 function upsertRow_(t, item) {
   if (!item || !item.id) throw new Error('id required');
   const sh = sheet_(t);
-  const o = norm_(t, Object.assign({}, item));
-  o.updated = now_();
-  const row = t.f.map(k => (o[k] == null ? '' : String(o[k])));
-  const r = findRow_(sh, o.id);
+  const r = findRow_(sh, item.id);
+  let o = Object.assign({}, item);
+  if (r > 0 && t === T.EV) {
+    if (item._create) return;
+    const cur = sh.getRange(r, 1, 1, t.f.length).getDisplayValues()[0];
+    const curDone = String(cur[t.f.indexOf('done')] || '').trim();
+    if (item._ifUndone && curDone) return;
+    if (curDone && !String(item.done || '').trim() && !item._undo) o.done = curDone;
+  }
+  o = norm_(t, o);
+  o.updated = (t === T.MEMO && item.updated) ? item.updated : now_();
+  const row = t.f.map(k => { let v = o[k] == null ? '' : String(o[k]); if (/^[=+\-@]/.test(v)) v = "'" + v; return v; });
   if (r > 0) sh.getRange(r, 1, 1, row.length).setValues([row]);
   else sh.getRange(sh.getLastRow() + 1, 1, 1, row.length).setValues([row]);
+}
+
+/* ---------- 画像（メモに貼る。1行45,000文字ずつに分けて保存） ---------- */
+function saveImage_(id, mime, data) {
+  if (!id || !data) throw new Error('image required');
+  const sh = sheet_(T.IMG);
+  const n = sh.getLastRow() - 1;
+  if (n > 0) { const ids = sh.getRange(2, 1, n, 1).getDisplayValues(); for (let i = ids.length - 1; i >= 0; i--) if (ids[i][0] === id) sh.deleteRow(i + 2); }
+  const rows = []; for (let i = 0, k = 0; i < data.length; i += 45000, k++) rows.push([id, mime || 'image/jpeg', String(k), 'b:' + data.slice(i, i + 45000)]);
+  sh.getRange(sh.getLastRow() + 1, 1, rows.length, 4).setNumberFormat('@').setValues(rows);
+}
+function getImage_(id) {
+  const sh = sheet_(T.IMG);
+  const n = sh.getLastRow() - 1;
+  if (n <= 0) return { data: '' };
+  const vals = sh.getRange(2, 1, n, 4).getDisplayValues().filter(r => r[0] === id).sort((a, b) => Number(a[2]) - Number(b[2]));
+  return { mime: vals.length ? vals[0][1] : '', data: vals.map(r => String(r[3]).replace(/^b:/, '')).join('') };
 }
 
 function deleteRow_(t, id) {
@@ -207,6 +244,8 @@ function upsertRecord_(p) {
       if (ymd_(vals[i][0]) === p.date && String(vals[i][1]) === p.id) { row = i + 2; break; }
     }
   }
+  // 古い送信で○を消さない（本人が外したときだけ _undo が付く）
+  if (row > 0 && !mark && !p._undo && String(sh.getRange(row, 4).getValue()) === '○') { if (note) sh.getRange(row, 5).setValue(note); return; }
   if (!mark && !note) { if (row > 0) sh.deleteRow(row); return; }
   const values = [[p.date, p.id, p.name || '', mark, note, new Date()]];
   if (row > 0) sh.getRange(row, 1, 1, 6).setValues(values);
