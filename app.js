@@ -44,6 +44,7 @@ const ICON = {
   compose: IC('<path d="M12 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6"/><path d="M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4z"/>'),
   pin: IC('<path d="M9 4h6l-1 6 4 3H6l4-3z"/><path d="M12 13v8"/>'),
   memo: IC('<rect x="4" y="3" width="16" height="18" rx="3"/><path d="M8 8h8M8 12h8M8 16h5"/>'),
+  target: IC('<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5"/>'),
   sun: IC('<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>')
 };
 
@@ -187,6 +188,15 @@ function ensureCases(){
     if(c && !isWait(c) && !c.date) saveEv({...c, date:T, order:nextOrder(T)}, {ifUndone:true});
   });
 }
+/* ---- ボトルネック ----
+   メモ（またはタイトル）に「ボトルネック」が入っているタスク。案件のステップは、案件のメモに入っていればボトルネック。
+   今日のリストの一番上に「朝の2時間」の枠を作り、その中にはボトルネックしか入らない。 */
+const BN_RE=/ボトルネック/;
+function isBN(e){ if(!e || isCase(e) || isHabit(e)) return false; if(BN_RE.test(e.note||"")||BN_RE.test(e.title||"")) return true; if(isStep(e)){ const h=caseHeader(caseIdOf(e)); return !!(h && (BN_RE.test(h.note||"")||BN_RE.test(h.title||""))); } return false; }
+function bnStart(){ try{ const v=localStorage.getItem("bn-start"); return /^\d{2}:\d{2}$/.test(v||"")? v : "10:00"; }catch(e){ return "10:00"; } }
+function setBnStart(v){ try{ localStorage.setItem("bn-start", v); }catch(e){} }
+const bnRange = () => { const s=toMin(bnStart()); return [s, Math.min(s+120, 1439)]; };
+const hmOf = m => pad(Math.floor(m/60))+":"+pad(m%60);
 const on = k => S.events.filter(e=>e.date===k && !isSkip(e) && !isCase(e) && (!isStep(e) || e.done || isCurrent(e)));
 // opt.create：無いときだけ作る／opt.ifUndone：未完了のときだけ変える。完了を外すときは自動で _undo を付ける
 function saveEv(e, opt={}){
@@ -305,6 +315,7 @@ function update(){ if(updater) updater(); else render(); }
 function row(e, opts={}){
   const r=el("div","row"+(isDone(e)?" done":"")); r.dataset.id=e.id; r.style.setProperty("--tc", tagColor(e.tag));
   if(opts.now) r.classList.add("now");
+  if(isBN(e)) r.classList.add("bn");
   const c=el("button","chk"); c.appendChild(svg("check")); c.setAttribute("aria-label","完了");
   c.onclick=ev=>{ ev.stopPropagation(); toggleDone(e, ev); };
   r.appendChild(c);
@@ -371,10 +382,26 @@ function viewTodo(app){
     setSync(syncState);
     body.innerHTML="";
     const now=nowHM();
+    // 🎯 朝の2時間（ボトルネックだけ）
+    const bnAll=all.filter(isBN), bnOpen=open.filter(isBN), bnDone=bnAll.filter(isDone).length;
+    const [bs,be]=bnRange(); const nowM=toMin(now);
+    const blk=el("div","bnblock"+(nowM>=bs && nowM<be?" live":"")+(bnAll.length && !bnOpen.length?" clear":""));
+    const bh=el("div","bnh"); const bi=el("span","bni"); bi.appendChild(svg("target"));
+    const bt=el("div","bnt"); bt.append(el("b",null,"ボトルネック"), el("span",null,"最初の2時間・最重要"));
+    const tl=el("label","bntime"); tl.appendChild(el("span",null,hmOf(bs)+"–"+hmOf(be))); const ti=el("input"); ti.type="time"; ti.value=hmOf(bs); ti.onchange=()=>{ if(ti.value){ setBnStart(ti.value); update(); } }; tl.appendChild(ti);
+    bh.append(bi, bt, tl); blk.appendChild(bh);
+    if(bnAll.length){ const pg=el("div","bnprog"); const pf=el("i"); pf.style.width=(bnDone/bnAll.length*100)+"%"; pg.appendChild(pf); blk.appendChild(pg); }
+    const bl=el("div","list bnlist"); bl.dataset.date=T; bl.dataset.bn="1";
+    bnOpen.forEach(e=>bl.appendChild(row(e)));
+    blk.appendChild(bl);
+    if(!bnOpen.length){ const em=el("div","bnempty", bnAll.length? "✓ 今日のボトルネックは全部終わった" : "今日のボトルネックがない"); blk.appendChild(em); }
+    const ba=el("button","bnadd"); ba.type="button"; ba.appendChild(svg("plus")); ba.appendChild(document.createTextNode("ボトルネックを追加")); ba.onclick=()=>openItem(null,{date:T, bn:true}); blk.appendChild(ba);
+    body.appendChild(blk);
     const lt=el("div","list"); lt.dataset.date=T;
-    open.forEach(e=>lt.appendChild(row(e,{now: isTimed(e) && e.start<=now && (e.end||e.start)>now})));
+    open.filter(e=>!isBN(e)).forEach(e=>lt.appendChild(row(e,{now: isTimed(e) && e.start<=now && (e.end||e.start)>now})));
+    if(open.some(e=>!isBN(e))) body.appendChild(el("div","sec","そのあと"));
     body.appendChild(lt);
-    if(!open.length) body.appendChild(emptyBox(done? "今日の分は全部終わった" : "上の欄から追加"));
+    if(!open.filter(e=>!isBN(e)).length && !bnOpen.length) body.appendChild(emptyBox(done? "今日の分は全部終わった" : "上の欄から追加"));
     if(dn.length){
       const b=el("button","donebtn"); b.appendChild(svg(openDone?"down":"check")); b.appendChild(document.createTextNode(String(dn.length)));
       b.onclick=()=>{ openDone=!openDone; update(); }; body.appendChild(b);
@@ -401,7 +428,7 @@ function viewTodo(app){
     tm.forEach(e=>lm.appendChild(row(e)));
     body.appendChild(lm);
     if(pv.length){ const pl=el("div","pvs"); pl.appendChild(svg("repeat")); pv.forEach(p=>{ const c=el("span","pv",p.title); c.style.setProperty("--tc",tagColor(p.tag)); pl.appendChild(c); }); body.appendChild(pl); }
-    enableDrag([lt,lm]);
+    enableDrag([bl,lt,lm]);
   };
   updater();
 }
@@ -440,6 +467,9 @@ function beginDrag(r, lists, sx, sy){
     for(const l of lists){ const b=l.getBoundingClientRect(); if(y>=b.top-30 && y<=b.bottom+30){ target=l; break; } }
     if(!target){ const ds=lists.map(l=>{ const b=l.getBoundingClientRect(); return Math.min(Math.abs(y-b.top),Math.abs(y-b.bottom)); }); target=lists[ds.indexOf(Math.min(...ds))]; }
     if(isHabit(e0) && target.dataset.date!==e0.date) target=r.parentElement.dataset.date===e0.date? r.parentElement : lists.find(l=>l.dataset.date===e0.date);
+    const bnL=lists.find(l=>l.dataset.bn==="1"), tdL=lists.find(l=>l.dataset.bn!=="1" && bnL && l.dataset.date===bnL.dataset.date);
+    if(bnL && target===bnL && !isBN(e0)){ target=tdL||r.parentElement; if(!drag.warned){ drag.warned=true; toast("🎯 ここはボトルネック専用"); } }
+    if(bnL && target===tdL && isBN(e0)) target=bnL;
     const others=[...target.querySelectorAll(":scope > .row[data-id]")].filter(x=>x!==r);
     let before=null; for(const o of others){ const b=o.getBoundingClientRect(); if(y < b.top+b.height/2){ before=o; break; } }
     if(r.parentElement!==target || r.nextSibling!==before) target.insertBefore(r, before);
@@ -551,7 +581,14 @@ function openItem(id, preset={}){
   paintR(); sh.appendChild(b2); if(st) b2.hidden=true;
 
   // メモ
-  const b3=el("div","blk"); const l7=ln("note"); const nIn=el("textarea"); nIn.placeholder="メモ"; nIn.value=e.note||""; nIn.oninput=()=>autoGrow(nIn); l7.appendChild(nIn); b3.appendChild(l7); sh.appendChild(b3); requestAnimationFrame(()=>autoGrow(nIn));
+  // 🎯 ボトルネック（メモの先頭に【ボトルネック】を付け外しする。案件のステップは案件ごと）
+  const inheritBN = st && (()=>{ const hd=caseHeader(caseIdOf(ex)); return !!(hd && BN_RE.test((hd.note||"")+(hd.title||""))); })();
+  let bnOn = inheritBN || !!preset.bn || BN_RE.test(e.note||"") || BN_RE.test(e.title||"");
+  const bnB=el("button","bntoggle"); bnB.type="button";
+  const paintBN=()=>{ bnB.className="bntoggle"+(bnOn?" on":""); bnB.innerHTML=""; bnB.appendChild(svg("target")); bnB.appendChild(el("b",null,"ボトルネック")); bnB.appendChild(el("span",null, inheritBN? "案件ごとボトルネック" : bnOn? "朝の2時間に入る" : "押すと朝の2時間に入れる")); };
+  bnB.onclick=()=>{ if(inheritBN) return; bnOn=!bnOn; paintBN(); }; paintBN();
+  sh.insertBefore(bnB, b1);
+  const b3=el("div","blk"); const l7=ln("note"); const nIn=el("textarea"); nIn.placeholder="メモ"; nIn.value=String(e.note||"").replace(/^【ボトルネック】\s*/,""); nIn.oninput=()=>autoGrow(nIn); l7.appendChild(nIn); b3.appendChild(l7); sh.appendChild(b3); requestAnimationFrame(()=>autoGrow(nIn));
 
   const acts=el("div","acts");
   if(ex){ const del=el("button","del"); del.appendChild(svg("trash")); del.onclick=()=>{
@@ -569,7 +606,10 @@ function openItem(id, preset={}){
     setLastTag(e.tag||lastTag);
     const title=joinIT(ifv, then);
     const kind = st ? (waitK ? "待つ" : (tmode==="block" ? String(dur) : "")) : (isWait(e) ? "待つ" : (tmode==="block" ? String(dur) : ""));
-    let item={...e, title, start:tmode==="time"?sIn.value:"", end:tmode==="time"?eIn.value:"", color:kind, note:nIn.value};
+    let note=nIn.value;
+    if(!inheritBN){ const has=BN_RE.test(note)||BN_RE.test(title); if(bnOn && !has) note="【ボトルネック】"+(note.trim()?" "+note:""); if(!bnOn && has) note=note.replace(/【ボトルネック[^】]*】\s*/g,"").replace(/ボトルネック/g,""); }
+    let item={...e, title, start:tmode==="time"?sIn.value:"", end:tmode==="time"?eIn.value:"", color:kind, note};
+    if(tmode==="time" && !isBN(item)){ const [bs,be]=bnRange(); const s=toMin(item.start), en=toMin(item.end)||s+60; if(s<be && en>bs){ toast("🎯 "+hmOf(bs)+"–"+hmOf(be)+" はボトルネック専用", "時間をずらすか、ボトルネックにする"); return; } }
     if(!ex || ex.date!==item.date) item.order = ex ? nextOrder(item.date) : (item.date===T||item.date===dayAt(1) ? nextOrder(item.date) : "");
     if(st){ if(!item.date) item.order=""; saveEv(item); closeSheet(); ensureCases(); update(); return; }
     const oldKind = h ? "habit" : ru ? "rule" : "none";
@@ -748,7 +788,9 @@ function timeline(days){
   tl.appendChild(hours);
   days.forEach(k=>{
     const col=el("div","col");
-    for(let i=0;i<24;i++){ const hl=el("div","hl"); hl.onclick=()=>openItem(null,{date:k,start:pad(i)+":00",end:pad((i+1)%24)+":00"}); col.appendChild(hl); }
+    const [bs,be]=bnRange();
+    for(let i=0;i<24;i++){ const hl=el("div","hl"); const inBN=(i*60>=bs && i*60<be); hl.onclick=()=>openItem(null,{date:k,start:pad(i)+":00",end:pad((i+1)%24)+":00", bn:inBN}); col.appendChild(hl); }
+    const band=el("div","bnband"); band.style.top=(bs*HOUR/60)+"px"; band.style.height=((be-bs)*HOUR/60)+"px"; band.appendChild(el("span",null,"🎯 ボトルネック")); col.appendChild(band);
     layout(calItems(k).filter(isTimed)).forEach(it=>{
       const box=el("div","ev"+(isDone(it.e)?" done":"")); const w=100/it.lanes;
       box.style.top=(it.s*HOUR/60)+"px"; box.style.height=Math.max(22,(it.en-it.s)*HOUR/60-2)+"px";
@@ -769,7 +811,8 @@ function scrollTimeline(){ requestAnimationFrame(()=>{ const sc=$("tlscroll"); i
 /* ================= やったこと（ゲーム） ================= */
 // 経験値：タスク10／習慣15／案件のステップ20／案件クリア100／パーフェクトデー（その日の習慣を全部やった）50
 const XP_TASK=10, XP_HABIT=15, XP_STEP=20, XP_CASE=100, XP_PERFECT=50;
-function xpOf(e){ if(isCase(e)) return XP_CASE; if(isHabit(e)) return XP_HABIT; if(isStep(e)) return XP_STEP; return XP_TASK; }
+const XP_BN=30;
+function xpOf(e){ if(isCase(e)) return XP_CASE; if(isHabit(e)) return XP_HABIT; if(isBN(e)) return XP_BN; if(isStep(e)) return XP_STEP; return XP_TASK; }
 function doneOn(k){
   const evs=S.events.filter(e=>doneDay(e)===k).sort((a,b)=>a.done<b.done?-1:1);
   const r=S.days[k]||{};
@@ -831,7 +874,7 @@ function confetti(n=90){
   requestAnimationFrame(step);
 }
 function xpPop(x,y,txt){ const p=el("div","xppop",txt); p.style.left=x+"px"; p.style.top=y+"px"; document.body.appendChild(p); setTimeout(()=>p.remove(),1000); }
-function toast(big, small){ const t=el("div","gtoast"); t.appendChild(el("b",null,big)); if(small) t.appendChild(el("span",null,small)); document.body.appendChild(t); setTimeout(()=>t.classList.add("out"),2200); setTimeout(()=>t.remove(),2700); }
+function toast(big, small){ document.querySelectorAll(".gtoast").forEach(x=>x.remove()); const t=el("div","gtoast"); t.appendChild(el("b",null,big)); if(small) t.appendChild(el("span",null,small)); document.body.appendChild(t); setTimeout(()=>t.classList.add("out"),2200); setTimeout(()=>t.remove(),2700); }
 // 完了したときに呼ぶ：レベルアップと新しいバッジを知らせる
 function celebrate(){
   const g=gameStats();
