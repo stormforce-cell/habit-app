@@ -45,6 +45,12 @@ const ICON = {
   pin: IC('<path d="M9 4h6l-1 6 4 3H6l4-3z"/><path d="M12 13v8"/>'),
   memo: IC('<rect x="4" y="3" width="16" height="18" rx="3"/><path d="M8 8h8M8 12h8M8 16h5"/>'),
   target: IC('<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5"/>'),
+  user: IC('<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>'),
+  shop: IC('<path d="M4 9.5 5.5 4h13L20 9.5"/><path d="M4 9.5a2.7 2.7 0 0 0 5.3 0 2.7 2.7 0 0 0 5.4 0 2.7 2.7 0 0 0 5.3 0"/><path d="M5 11.5V20h14v-8.5M10 20v-5h4v5"/>'),
+  spark: IC('<path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M6 18l2.5-2.5M15.5 8.5 18 6"/>'),
+  bot: IC('<rect x="4" y="8" width="16" height="12" rx="3"/><path d="M12 4v4M9 14h.01M15 14h.01"/>'),
+  link: IC('<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>'),
+  copy: IC('<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/>'),
   sun: IC('<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>')
 };
 
@@ -66,7 +72,7 @@ const DEFAULT_ITEMS = [
 // events：日付のついたタスク（予定タブ）。習慣も繰り返しも、その日の分はここに1行として入る
 //   rule が "h:習慣ID" → 習慣の分（ID は h_習慣ID_日付）／ rule が繰り返しID → 繰り返しの分（ID は r_ルールID_日付）
 //   done が "スキップ" → その日の分は飛ばした
-let S = { items: DEFAULT_ITEMS.map(x=>({...x})), days:{}, events:[], life:[], memos:[] };
+let S = { items: DEFAULT_ITEMS.map(x=>({...x})), days:{}, events:[], life:[], memos:[], anken:[], ankenLogs:[] };
 let pending = [];
 let syncState = "ok";
 
@@ -189,6 +195,7 @@ async function pull(){
     const days={};
     (j.records||[]).forEach(r=>{ days[r.date]=days[r.date]||{}; if(r.mark) days[r.date][r.id]=r.mark; if(r.note) days[r.date]["n_"+r.id]=r.note; });
     S.days=days; S.events=j.events||[]; S.life=j.life||[]; S.memos=j.memos||[];
+    S.anken=Array.isArray(j.cases)? j.cases : []; S.ankenLogs=Array.isArray(j.caseLogs)? j.caseLogs : [];
     const needItems = !(Array.isArray(j.items)&&j.items.length);
     if(!needItems) S.items=j.items;
     pending.forEach(applyOp);
@@ -358,15 +365,15 @@ const calState = { view:"day", date: todayKey() };
 let openDone = false;
 let drag = null;
 let memoId=null, memoLeave=null;
-function parseRoute(){ const parts=location.hash.replace(/^#\/?/,"").split("/"); const h=parts[0]; R = ["todo","cal","past","memo"].includes(h)? h : "todo"; memoId = (R==="memo" && parts[1]) ? decodeURIComponent(parts[1]) : null; }
-window.addEventListener("hashchange", ()=>{ if(memoLeave){ const f=memoLeave; memoLeave=null; f(); } parseRoute(); openDone=false; render(); window.scrollTo(0,0); });
+function parseRoute(){ const parts=location.hash.replace(/^#\/?/,"").split("/"); const h=parts[0]; R = ["todo","cal","past","memo","cases"].includes(h)? h : "todo"; memoId = (R==="memo" && parts[1]) ? decodeURIComponent(parts[1]) : null; }
+window.addEventListener("hashchange", ()=>{ if(memoLeave){ const f=memoLeave; memoLeave=null; f(); } parseRoute(); openDone=false; render(); window.scrollTo(0,0); if(R==="cases" && Date.now()-lastLoad>3000) pull(); });
 
 let updater=null;
 function render(){
   const app=$("app"); app.innerHTML=""; $("fab").hidden=true; updater=null;
   document.querySelectorAll("#tabs a").forEach(a=>a.classList.toggle("on", a.dataset.r===R));
   document.body.classList.toggle("memoedit", R==="memo" && !!memoId);
-  ({todo:viewTodo, cal:viewCal, past:viewPast, memo:(a)=> memoId ? viewMemoEdit(a, memoId) : viewMemoList(a)}[R])(app);
+  ({todo:viewTodo, cal:viewCal, past:viewPast, memo:(a)=> memoId ? viewMemoEdit(a, memoId) : viewMemoList(a), cases:viewAnken}[R])(app);
 }
 function update(){ if(updater) updater(); else render(); }
 
@@ -573,6 +580,24 @@ function chipGroup(options, cur, onPick){
   const paint=()=>{ box.innerHTML=""; options().forEach(o=>{ const b=el("button","chip"+(o.v===cur?" on":"")); b.type="button"; if(o.dot){ const i=el("i"); i.style.background=o.dot; b.appendChild(i); } b.appendChild(document.createTextNode(o.t)); b.onclick=()=>{ if(o.v==="__new"){ const t=(prompt("新しいタグ")||"").trim(); if(!t) return; cur=t; extraTags.add(t); onPick(t); } else { cur=o.v; onPick(o.v); } paint(); }; box.appendChild(b); }); };
   paint(); return {box, repaint:paint, set:v=>{ cur=v; paint(); }};
 }
+// くり返しのタスクを消すとき：「この日だけ」か「くり返しごとやめる」かを選ぶ（2026-11-13）
+function askRepeatDelete(ex, h, ru){
+  const sh=openSheet();
+  sh.appendChild(el("div","askt", splitIT(ex).then));
+  const b1=el("button","askb","この日だけ消す"); b1.type="button";
+  const b2=el("button","askb red","くり返しごとやめる"); b2.type="button";
+  const b3=el("button","askb sub","やめておく"); b3.type="button";
+  b1.onclick=()=>{ saveEv({...ex, done:"スキップ"}); closeSheet(); update(); };
+  b2.onclick=()=>{
+    if(h) saveItemsList(S.items.filter(x=>x.id!==h.id));
+    else if(ru) saveLife(S.life.filter(x=>x.id!==ru.id));
+    // その日の分と、まだ終わっていない先の分も消す（終わった分は「やったこと」に残す）
+    S.events.filter(x=>x.rule===ex.rule && !x.done && x.date>=ex.date).forEach(x=>saveEv({...x, done:"スキップ"}));
+    closeSheet(); update();
+  };
+  b3.onclick=closeSheet;
+  sh.append(b1,b2,b3);
+}
 function openItem(id, preset={}){
   const ex=id?S.events.find(e=>e.id===id):null;
   const T=todayKey();
@@ -652,7 +677,7 @@ function openItem(id, preset={}){
   const acts=el("div","acts");
   if(ex){ const del=el("button","del"); del.appendChild(svg("trash")); del.onclick=()=>{
       if(st){ if(!confirm("このステップを消す？")) return; queue("ev|"+e.id,"delEvent",{id:e.id}); ensureCases(); }
-      else if(e.rule){ if(!confirm("この日の分を消す？（くり返しは続く）")) return; saveEv({...ex, done:"スキップ"}); }
+      else if(e.rule){ askRepeatDelete(ex, h, ru); return; }
       else { if(!confirm("消す？")) return; queue("ev|"+e.id,"delEvent",{id:e.id}); }
       closeSheet(); update(); }; acts.appendChild(del); }
   const save=el("button","save","保存"); acts.appendChild(save); sh.appendChild(acts);
@@ -783,32 +808,65 @@ function openCase(cid, preset={}){
 
 /* ================= カレンダー ================= */
 const calItems = k => on(k).filter(e=>!isHabit(e) && !(isStep(e) && isWait(e)));
+// カレンダー（2026-11-13 改定）：時間の軸はやめて、その日の予定を全部リストで並べる。日・週・月の3つ。
+//   左右にスワイプで 次の日／次の週／次の月。行をタップで編集（消す・変えるもここから）。
 function viewCal(app){
+  if(!["day","week","month"].includes(calState.view)) calState.view="day";
   const v=calState.view, k=calState.date, d=parseKey(k);
   const top=el("div","cal-top");
-  const prev=el("button","ib"); prev.appendChild(svg("left"));
-  const next=el("button","ib"); next.appendChild(svg("right"));
-  const tb=el("button","ib wide","今日");
-  const step = v==="month"?0 : v==="week"?7 : v==="3day"?3 : 1;
-  const go=n=>{ calState.date = step? addDays(k,n*step) : keyOf(new Date(d.getFullYear(), d.getMonth()+n, 1, 12)); render(); scrollTimeline(); };
+  const prev=el("button","ib"); prev.type="button"; prev.appendChild(svg("left")); prev.setAttribute("aria-label","前");
+  const next=el("button","ib"); next.type="button"; next.appendChild(svg("right")); next.setAttribute("aria-label","次");
+  const tb=el("button","ib wide","今日"); tb.type="button";
+  const go=n=>{ calState.date = v==="month" ? keyOf(new Date(d.getFullYear(), d.getMonth()+n, 1, 12)) : addDays(k, n*(v==="week"?7:1)); calState.slide=n; render(); };
   prev.onclick=()=>go(-1); next.onclick=()=>go(1);
-  tb.onclick=()=>{ calState.date=todayKey(); render(); scrollTimeline(); };
-  top.append(el("b",null,(d.getMonth()+1)+"月"), tb, prev, next);
+  tb.onclick=()=>{ calState.date=todayKey(); calState.slide=0; render(); };
+  const title = v==="month" ? d.getFullYear()+"年"+(d.getMonth()+1)+"月" : v==="week" ? weekTitle(k) : md(k)+"（"+wd(k)+"）";
+  top.append(el("b",null,title), tb, prev, next);
   app.appendChild(top);
   const seg=el("div","seg");
-  [["day","日"],["3day","3日"],["week","週"],["month","月"]].forEach(([id,label])=>{ const b=el("button",v===id?"on":null,label); b.onclick=()=>{ calState.view=id; render(); scrollTimeline(); }; seg.appendChild(b); });
+  [["day","日"],["week","週"],["month","月"]].forEach(([id,label])=>{ const b=el("button",v===id?"on":null,label); b.type="button"; b.onclick=()=>{ calState.view=id; calState.slide=0; render(); }; seg.appendChild(b); });
   app.appendChild(seg);
-  if(v==="month") app.appendChild(monthView(k));
-  else {
-    let days=[];
-    if(v==="day") days=[k];
-    else if(v==="3day") days=[k,addDays(k,1),addDays(k,2)];
-    else { const s=addDays(k,-parseKey(k).getDay()); for(let i=0;i<7;i++) days.push(addDays(s,i)); }
-    app.appendChild(timeline(days));
-  }
+  const body=el("div","calbody");
+  if(calState.slide){ body.classList.add(calState.slide>0?"from-r":"from-l"); calState.slide=0; }
+  if(v==="month") body.appendChild(monthView(k));
+  else if(v==="week"){ const s=weekStart(k); for(let i=0;i<7;i++) body.appendChild(agendaDay(addDays(s,i), true)); }
+  else body.appendChild(agendaDay(k, false));
+  app.appendChild(body);
+  // 左右スワイプ（縦のスクロールとは区別する）
+  let sx=null, sy=null;
+  body.addEventListener("touchstart", ev=>{ if(ev.touches.length!==1){ sx=null; return; } sx=ev.touches[0].clientX; sy=ev.touches[0].clientY; }, {passive:true});
+  body.addEventListener("touchend", ev=>{ if(sx==null) return; const t=ev.changedTouches[0]; const dx=t.clientX-sx, dy=t.clientY-sy; sx=null;
+    if(Math.abs(dx)>60 && Math.abs(dx)>Math.abs(dy)*1.5) go(dx<0?1:-1); }, {passive:true});
   const f=$("fab"); f.hidden=false; f.innerHTML=""; f.appendChild(svg("plus")); f.onclick=()=>openItem(null,{date:k});
-  updater=()=>{ const sc=$("tlscroll"); const top=sc?sc.scrollTop:null; render(); const n=$("tlscroll"); if(n&&top!=null) n.scrollTop=top; };
-  scrollTimeline();
+  updater=()=>{ const y=window.scrollY; render(); window.scrollTo(0,y); };
+}
+const weekStart = k => addDays(k,-parseKey(k).getDay());
+function weekTitle(k){ const s=weekStart(k), e=addDays(s,6); return md(s)+"〜"+md(e); }
+// 1日分のリスト。時刻のある予定を時刻順に先に、そのあと時間なし（並び順）。文字は折り返して全部出す
+function agendaDay(k, withHead){
+  const T=todayKey(); const wrap=el("div","agday"+(k===T?" today":""));
+  if(withHead){ const h=el("button","aghead"); h.type="button"; h.append(el("b",null,String(parseKey(k).getDate())), el("span",null,wd(k)+(k===T?"・今日":"")));
+    h.onclick=()=>{ calState.date=k; calState.view="day"; render(); }; wrap.appendChild(h); }
+  const xs=calItems(k); const timed=xs.filter(isTimed).sort((a,b)=>a.start<b.start?-1:a.start>b.start?1:0); const rest=sortTasks(xs.filter(e=>!isTimed(e)));
+  const list=el("div","aglist");
+  if(!xs.length) list.appendChild(el("div","agnone", withHead? "—" : "予定なし"));
+  [...timed, ...rest].forEach(e=>{
+    const r=el("button","agrow"+(isDone(e)?" done":"")); r.type="button"; r.style.setProperty("--tc",tagColor(e.tag));
+    const tm=el("div","agtime");
+    if(e.start){ tm.appendChild(el("b",null,e.start)); if(e.end) tm.appendChild(el("span",null,e.end)); }
+    else if(blockMin(e)) tm.appendChild(el("span",null,fmtDur(blockMin(e))));
+    r.appendChild(tm);
+    const tx=el("div","agtx"); const it=splitIT(e);
+    if(it.if) tx.appendChild(el("div","agif",it.if+" →"));
+    tx.appendChild(el("div","agt",it.then));
+    if(ruleOf(e)) tx.appendChild(el("div","agrep","くり返し・"+ruleRuleText(ruleOf(e))));
+    r.appendChild(tx);
+    if(isDone(e)){ const c=el("span","agchk"); c.appendChild(svg("check")); r.appendChild(c); }
+    r.onclick=()=>openItem(e.id);
+    list.appendChild(r);
+  });
+  wrap.appendChild(list);
+  return wrap;
 }
 function monthView(k){
   const d=parseKey(k), first=new Date(d.getFullYear(), d.getMonth(), 1, 12);
@@ -829,53 +887,7 @@ function monthView(k){
   wrap.appendChild(grid);
   return wrap;
 }
-const HOUR=52;
-function layout(evs){
-  const items=evs.map(e=>{ const s=toMin(e.start); let en=toMin(e.end); if(en==null||en<=s) en=s+60; return {e,s,en}; }).sort((a,b)=>a.s-b.s||b.en-a.en);
-  let cluster=[], clusterEnd=-1; const out=[];
-  const finish=()=>{ const lanes=[]; cluster.forEach(it=>{ let l=lanes.findIndex(end=>end<=it.s); if(l<0){ l=lanes.length; lanes.push(0);} lanes[l]=it.en; it.lane=l; }); cluster.forEach(it=>{ it.lanes=lanes.length; out.push(it); }); cluster=[]; };
-  items.forEach(it=>{ if(it.s>=clusterEnd && cluster.length) finish(); cluster.push(it); clusterEnd=Math.max(clusterEnd,it.en); });
-  if(cluster.length) finish();
-  return out;
-}
-function timeline(days){
-  const wrap=el("div","tl-wrap"); const T=todayKey();
-  const dh=el("div","tl-days");
-  days.forEach(k=>{ const x=el("div","d"+(k===T?" today":"")); x.append(document.createTextNode(wd(k))); x.appendChild(el("b",null,String(parseKey(k).getDate()))); x.onclick=()=>{ calState.date=k; calState.view="day"; render(); scrollTimeline(); }; dh.appendChild(x); });
-  wrap.appendChild(dh);
-  const ad=el("div","tl-allday");
-  const lim = calState.allOpen ? 99 : (days.length===1 ? 3 : 2);
-  days.forEach(k=>{ const col=el("div","col"); const xs=sortTasks(calItems(k).filter(e=>!isTimed(e)));
-    xs.slice(0,lim).forEach(e=>{ const ch=el("div","ech"+(isDone(e)?" done":""),(blockMin(e)?fmtDur(blockMin(e))+" ":"")+splitIT(e).then); ch.style.setProperty("--tc",tagColor(e.tag)); ch.onclick=()=>openItem(e.id); col.appendChild(ch); });
-    if(xs.length>lim){ const m=el("div","adm","+"+(xs.length-lim)); m.onclick=()=>{ calState.allOpen=true; render(); }; col.appendChild(m); }
-    else if(calState.allOpen && xs.length>(days.length===1?3:2)){ const m=el("div","adm","▲"); m.onclick=()=>{ calState.allOpen=false; render(); }; col.appendChild(m); }
-    ad.appendChild(col); });
-  wrap.appendChild(ad);
-  const sc=el("div","tl-scroll"); sc.id="tlscroll";
-  const tl=el("div","tl");
-  const hours=el("div","hours"); for(let i=0;i<24;i++) hours.appendChild(el("div",null,i?i+":00":""));
-  tl.appendChild(hours);
-  days.forEach(k=>{
-    const col=el("div","col");
-    const [bs,be]=bnRange();
-    for(let i=0;i<24;i++){ const hl=el("div","hl"); const inBN=(i*60>=bs && i*60<be); hl.onclick=()=>openItem(null,{date:k,start:pad(i)+":00",end:pad((i+1)%24)+":00", bn:inBN}); col.appendChild(hl); }
-    const band=el("div","bnband"); band.style.top=(bs*HOUR/60)+"px"; band.style.height=((be-bs)*HOUR/60)+"px"; band.appendChild(el("span",null,"🎯 ボトルネック")); col.appendChild(band);
-    layout(calItems(k).filter(isTimed)).forEach(it=>{
-      const box=el("div","ev"+(isDone(it.e)?" done":"")); const w=100/it.lanes;
-      box.style.top=(it.s*HOUR/60)+"px"; box.style.height=Math.max(22,(it.en-it.s)*HOUR/60-2)+"px";
-      box.style.left="calc("+(it.lane*w)+"% + 1px)"; box.style.width="calc("+w+"% - 3px)";
-      box.style.setProperty("--tc",tagColor(it.e.tag));
-      box.appendChild(el("b",null,splitIT(it.e).then)); box.appendChild(document.createTextNode(it.e.start+(it.e.end?"–"+it.e.end:"")));
-      box.onclick=ev=>{ ev.stopPropagation(); openItem(it.e.id); };
-      col.appendChild(box);
-    });
-    if(k===T){ const nl=el("div","nowline"); nl.style.top=(toMin(nowHM())*HOUR/60)+"px"; col.appendChild(nl); }
-    tl.appendChild(col);
-  });
-  sc.appendChild(tl); wrap.appendChild(sc);
-  return wrap;
-}
-function scrollTimeline(){ requestAnimationFrame(()=>{ const sc=$("tlscroll"); if(!sc) return; sc.scrollTop=Math.max(0,toMin(nowHM())-90)*HOUR/60; }); }
+function scrollTimeline(){}
 
 /* ================= やったこと（ゲーム） ================= */
 // 経験値：タスク10／習慣15／案件のステップ20／案件クリア100／パーフェクトデー（その日の習慣を全部やった）50
@@ -1184,6 +1196,138 @@ function viewMemoEdit(app, id){
   setMode(!!m._new || !String(m.body||"").trim());
   if(editing) setTimeout(()=>ta.focus(), 80);
   updater=()=>{};
+}
+
+/* ================= 案件タブ（2026-11-13）=================
+   データは AI がスプシの「案件」「案件ログ」タブに書く。アプリは読むだけ（編集しない）。
+   load の cases / caseLogs を S.anken / S.ankenLogs に持つ。 */
+let akFilter="all";
+const AK_CATS=[["all","全部"],["お金","お金"],["決まりかけ","決まりかけ"],["その他","その他"]];
+function akDue(a){                    // 期日 → {k:日付, t:時刻} か null
+  const m=String(a.due||"").trim().replace(/\//g,"-").match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:\s+(\d{1,2}):(\d{2}))?/);
+  if(!m) return null;
+  return {k:m[1]+"-"+pad(m[2])+"-"+pad(m[3]), t: m[4]!=null ? pad(m[4])+":"+m[5] : ""};
+}
+function akDueInfo(a){                // 色の段階と表示
+  const d=akDue(a); if(!d) return null;
+  const n=dayDiff(todayKey(), d.k);
+  const cls = n<0 ? "late" : n===0 ? "today" : n<=3 ? "soon" : "far";
+  const label = n<0 ? (-n)+"日遅れ" : n===0 ? "今日" : n===1 ? "明日" : md(d.k);
+  return {cls, label, t:d.t, k:d.k, n};
+}
+function akSorted(list){
+  return list.slice().sort((a,b)=>{
+    const x=akDue(a), y=akDue(b);
+    if(!x && !y) return String(b.updated||"").localeCompare(String(a.updated||""));
+    if(!x) return 1; if(!y) return -1;
+    if(x.k!==y.k) return x.k<y.k?-1:1;
+    if(!!x.t!==!!y.t) return x.t?-1:1;
+    return x.t<y.t?-1:x.t>y.t?1:0;
+  });
+}
+const AK_TURN={ "Akinari":{icon:"user", cls:"me", name:"自分"}, "Claude":{icon:"spark", cls:"", name:"Claude"}, "客":{icon:"user", cls:"", name:"客"}, "店":{icon:"shop", cls:"", name:"店"}, "GrokBot":{icon:"bot", cls:"", name:"GrokBot"} };
+function akTurn(a){ const t=String(a.turn||"").trim(); const k=Object.keys(AK_TURN).find(x=>x.toLowerCase()===t.toLowerCase()); return k? {key:k, ...AK_TURN[k]} : (t? {key:t, icon:"user", cls:"", name:t} : null); }
+function akTurnEl(a, withName){
+  const t=akTurn(a); if(!t) return null;
+  const b=el("span","akturn"+(t.cls?" "+t.cls:"")); b.appendChild(svg(t.icon)); b.title=t.name;
+  if(withName) b.appendChild(el("span",null,t.name));
+  return b;
+}
+function akDueEl(a, big){
+  const d=akDueInfo(a); if(!d) return null;
+  const c=el("span","akdue "+d.cls+(big?" big":"")); c.appendChild(el("b",null,d.label)); if(d.t) c.appendChild(el("i",null,d.t));
+  return c;
+}
+function viewAnken(app){
+  const top=el("div","top"); const dt=el("div","date"); const cnt=el("span"); dt.append(el("b",null,"案件"), cnt); top.appendChild(dt); app.appendChild(top);
+  const chips=el("div","akchips"); app.appendChild(chips);
+  const box=el("div","aklist"); app.appendChild(box);
+  const paint=()=>{
+    const all=(S.anken||[]).filter(a=>String(a.id||"").trim());
+    cnt.textContent=all.length+"件";
+    chips.innerHTML="";
+    AK_CATS.forEach(([k,name])=>{ const n=k==="all"? all.length : all.filter(a=>String(a.cat||"").trim()===k).length;
+      const b=el("button","akchip"+(akFilter===k?" on":"")); b.type="button"; b.append(el("span",null,name), el("b",null,String(n)));
+      b.onclick=()=>{ akFilter=k; paint(); }; chips.appendChild(b); });
+    box.innerHTML="";
+    const list=akSorted(akFilter==="all"? all : all.filter(a=>String(a.cat||"").trim()===akFilter));
+    if(!list.length){ box.appendChild(emptyBox(all.length? "この分類の案件はない" : "進行中の案件はない")); return; }
+    list.forEach(a=>{
+      const r=el("button","akrow"); r.type="button";
+      const d=akDueEl(a); const lc=el("div","akl"); if(d) lc.appendChild(d); r.appendChild(lc);
+      const mid=el("div","akm");
+      const l1=el("div","ak1"); l1.appendChild(el("b",null,a.who||a.item||"（名前なし）")); if(a.country) l1.appendChild(el("span","akc",a.country));
+      if(String(a.cat||"").trim()==="その他" && String(a.sub||"").trim()) l1.appendChild(el("span","aksub",a.sub.trim()));
+      mid.appendChild(l1);
+      mid.appendChild(el("div","ak2", a.next||a.stage||""));
+      r.appendChild(mid);
+      const t=akTurnEl(a); if(t) r.appendChild(t);
+      r.onclick=()=>openAnken(a.id);
+      box.appendChild(r);
+    });
+  };
+  paint();
+  updater=paint;
+}
+function akLinkLines(s){
+  return String(s||"").split(/\r?\n/).map(x=>x.trim()).filter(Boolean).map(line=>{
+    const m=line.match(/^(.*?)\s*(https?:\/\/\S+)\s*$/);
+    if(m) return {name:m[1]||m[2], url:m[2]};
+    // 番号は末尾の「数字を含む語」の並び（例「追跡番号 8785 1234 5678」→ 8785 1234 5678）
+    const w=line.split(/\s+/); let i=w.length; while(i>1 && /\d/.test(w[i-1])) i--;
+    if(i===w.length) i=w.length-1;
+    return i>0? {name:w.slice(0,i).join(" "), code:w.slice(i).join(" ")} : {name:"", code:line};
+  });
+}
+function copyText(t){
+  const ok=()=>toast("コピーした", t);
+  if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(ok, ()=>{});
+  else { const ta=document.createElement("textarea"); ta.value=t; document.body.appendChild(ta); ta.select(); try{ document.execCommand("copy"); ok(); }catch(e){} ta.remove(); }
+}
+function openAnken(id){
+  const a=(S.anken||[]).find(x=>x.id===id); if(!a) return;
+  const sh=openSheet(); sh.classList.add("tall","aksheet");
+  const sec=(title)=>{ const s=el("div","aksec"); if(title) s.appendChild(el("div","akh",title)); sh.appendChild(s); return s; };
+  // 1. 見出し
+  const h=sec(); const ht=el("div","aktitle"); ht.appendChild(el("b",null,a.who||"（名前なし）")); if(a.country) ht.appendChild(el("span",null,a.country)); h.appendChild(ht);
+  const tags=el("div","aktags");
+  [a.cat, String(a.cat||"").trim()==="その他"? a.sub : "", a.channel].map(x=>String(x||"").trim()).filter(Boolean).forEach(x=>tags.appendChild(el("span","aktag",x)));
+  h.appendChild(tags);
+  if(a.item) h.appendChild(el("div","akitem",a.item));
+  if(a.stage) h.appendChild(el("div","akstage",a.stage));
+  // 2. 次
+  const n=sec("次"); const nr=el("div","aknext");
+  const d=akDueEl(a,true); if(d) nr.appendChild(d);
+  nr.appendChild(el("div","aknt",a.next||"—"));
+  n.appendChild(nr);
+  const t=akTurnEl(a,true); if(t){ const tw=el("div","akturnrow"); tw.appendChild(el("span",null,"誰の番")); tw.appendChild(t); n.appendChild(tw); }
+  // 3. 進み（新しい順・全部）
+  const logs=(S.ankenLogs||[]).filter(x=>String(x.caseId||"").trim()===String(a.id).trim()).sort((x,y)=>String(y.at||"").localeCompare(String(x.at||"")));
+  const p=sec("進み"+(logs.length? "（"+logs.length+"）" : ""));
+  if(!logs.length) p.appendChild(el("div","aknone","まだない"));
+  logs.forEach(x=>{ const r=el("div","aklog"); const at=String(x.at||""); const m=at.match(/^\d{4}-(\d{2})-(\d{2})\s*(\d{1,2}:\d{2})?/);
+    r.appendChild(el("span","aklt", m? Number(m[1])+"/"+Number(m[2])+(m[3]?" "+m[3]:"") : at));
+    const body=el("div","aklb"); if(x.by) body.appendChild(el("b",null,x.by)); body.appendChild(document.createTextNode(x.text||""));
+    if(x.proof) body.appendChild(el("div","akproof",x.proof));
+    r.appendChild(body); p.appendChild(r); });
+  // 4. メモ
+  if(String(a.note||"").trim()){ const s=sec("メモ"); s.appendChild(el("div","aktext",a.note)); }
+  // 5. 支払い内訳
+  if(String(a.pay||"").trim()){ const s=sec("支払い内訳"); s.appendChild(el("pre","akpay",a.pay)); }
+  // 6. リンク
+  const links=akLinkLines(a.links);
+  if(links.length){ const s=sec("リンク"); const ul=el("div","aklinks");
+    links.forEach(x=>{
+      if(x.url){ const l=el("a","aklink"); l.href=x.url; l.target="_blank"; l.rel="noopener"; l.appendChild(svg("link")); const tx=el("div"); tx.appendChild(el("b",null,x.name)); if(x.name!==x.url) tx.appendChild(el("span",null,x.url)); l.appendChild(tx); ul.appendChild(l); }
+      else { const l=el("div","aklink code"); l.appendChild(svg("copy")); const tx=el("div"); if(x.name) tx.appendChild(el("b",null,x.name)); tx.appendChild(el("span","akcode",x.code)); l.appendChild(tx);
+        let timer=null; const start=()=>{ timer=setTimeout(()=>{ timer=null; copyText(x.code); if(navigator.vibrate) navigator.vibrate(10); }, 500); }; const stop=()=>{ if(timer){ clearTimeout(timer); timer=null; } };
+        l.addEventListener("touchstart", start, {passive:true}); l.addEventListener("touchend", stop); l.addEventListener("touchmove", stop, {passive:true});
+        l.addEventListener("mousedown", start); l.addEventListener("mouseup", stop); l.addEventListener("mouseleave", stop);
+        l.addEventListener("contextmenu", ev=>{ ev.preventDefault(); });
+        ul.appendChild(l); }
+    });
+    s.appendChild(ul); }
+  if(a.updated) sh.appendChild(el("div","akupd","更新 "+a.updated));
 }
 
 /* ================= 起動 ================= */

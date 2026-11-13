@@ -410,6 +410,83 @@ body.memoedit main{padding-bottom:calc(40px + env(safe-area-inset-bottom,0px))}
 .day-h{display:flex;align-items:baseline;gap:8px;margin:20px 4px 8px}
 .day-h b{font-size:18px;font-weight:800}
 .day-h span{color:var(--sub);font-size:13px;font-weight:700}
+
+/* ===== カレンダー：リスト表示（2026-11-13） ===== */
+.calbody{touch-action:pan-y}
+.calbody.from-r{animation:slr .22s ease-out} .calbody.from-l{animation:sll .22s ease-out}
+@keyframes slr{from{transform:translateX(40px);opacity:.3}to{transform:none;opacity:1}}
+@keyframes sll{from{transform:translateX(-40px);opacity:.3}to{transform:none;opacity:1}}
+.agday{margin-bottom:12px}
+.aghead{display:flex;align-items:baseline;gap:6px;border:0;background:none;color:var(--ink);padding:4px 4px 6px;width:100%;text-align:left}
+.aghead b{font-size:20px;font-weight:800} .aghead span{font-size:13px;color:var(--sub);font-weight:700}
+.agday.today .aghead b,.agday.today .aghead span{color:var(--acc)}
+.aglist{display:flex;flex-direction:column;gap:6px}
+.agnone{color:var(--sub);font-size:14px;padding:6px 6px}
+.agrow{position:relative;display:flex;align-items:flex-start;gap:10px;width:100%;border:0;text-align:left;background:var(--card);border-radius:14px;padding:11px 12px 11px 16px;box-shadow:var(--shadow);color:var(--ink);overflow:hidden}
+.agrow::before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;background:var(--tc,var(--other))}
+.agtime{flex:none;width:44px;display:flex;flex-direction:column;font-variant-numeric:tabular-nums;padding-top:1px}
+.agtime b{font-size:14px;font-weight:800;color:var(--tc,var(--other))} .agtime span{font-size:12px;color:var(--sub);font-weight:600}
+.agtx{flex:1;min-width:0;overflow-wrap:anywhere;word-break:break-word}
+.agt{font-size:15px;font-weight:600;line-height:1.4;white-space:pre-wrap}
+.agif{font-size:12px;color:var(--sub);font-weight:700;margin-bottom:2px}
+.agrep{font-size:11px;color:var(--sub);margin-top:3px}
+.agrow.done .agt{text-decoration:line-through;color:var(--sub)}
+.agchk{flex:none;width:22px;height:22px;border-radius:50%;background:var(--tc,var(--other));color:#fff;display:flex;align-items:center;justify-content:center}
+.agchk svg{width:14px;height:14px}
+/* くり返しの消し方を選ぶ */
+.askt{font-size:16px;font-weight:700;margin:6px 4px 14px;overflow-wrap:anywhere}
+.askb{display:block;width:100%;border:0;border-radius:14px;background:var(--card);box-shadow:var(--shadow);color:var(--ink);font-size:16px;font-weight:700;padding:14px;margin-bottom:8px}
+.askb.red{color:var(--now)} .askb.sub{background:none;box-shadow:none;color:var(--sub)}
+
+/* ===== 案件タブ（2026-11-13） ===== */
+.akchips{display:flex;gap:6px;overflow-x:auto;margin:0 -2px 12px;padding:0 2px 2px;scrollbar-width:none}
+.akchips::-webkit-scrollbar{display:none}
+.akchip{flex:none;display:flex;align-items:center;gap:6px;border:0;border-radius:20px;background:var(--card);box-shadow:var(--shadow);color:var(--ink);font-size:14px;font-weight:700;padding:7px 12px}
+.akchip b{font-size:12px;min-width:20px;border-radius:10px;padding:1px 6px;background:var(--soft);color:var(--sub);text-align:center}
+.akchip.on{background:var(--ink);color:var(--card)} .akchip.on b{background:color-mix(in srgb,var(--card) 25%,transparent);color:var(--card)}
+.aklist{display:flex;flex-direction:column;gap:7px}
+.akrow{display:flex;align-items:center;gap:10px;width:100%;border:0;text-align:left;background:var(--card);border-radius:14px;padding:11px 12px;box-shadow:var(--shadow);color:var(--ink);min-width:0}
+.akl{flex:none;width:56px;display:flex;justify-content:center}
+.akm{flex:1;min-width:0}
+.ak1{display:flex;align-items:baseline;gap:6px;flex-wrap:wrap;min-width:0}
+.ak1 b{font-size:15px;font-weight:800;overflow-wrap:anywhere}
+.akc{font-size:12px;color:var(--sub);font-weight:600}
+.aksub{font-size:11px;font-weight:700;color:var(--sub);background:var(--soft);border-radius:6px;padding:1px 6px}
+.ak2{font-size:13px;color:var(--ink);opacity:.85;margin-top:3px;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+.akdue{display:inline-flex;flex-direction:column;align-items:center;border-radius:10px;padding:5px 7px;min-width:44px;font-variant-numeric:tabular-nums;background:var(--soft);color:var(--sub)}
+.akdue b{font-size:13px;font-weight:800;white-space:nowrap} .akdue i{font-style:normal;font-size:11px;font-weight:700;opacity:.85}
+.akdue.late{background:var(--now);color:#fff}
+.akdue.today{background:var(--life);color:#fff}
+.akdue.soon{background:#f5c518;color:#3a2e00}
+.akdue.big{flex-direction:row;gap:6px;padding:6px 10px} .akdue.big b{font-size:15px}
+.akturn{flex:none;display:inline-flex;align-items:center;justify-content:center;gap:5px;min-width:32px;height:32px;border-radius:16px;background:var(--soft);color:var(--sub);padding:0 7px}
+.akturn svg{width:18px;height:18px}
+.akturn.me{background:var(--now);color:#fff}
+.akturn span{font-size:13px;font-weight:700}
+.aksheet .aksec{background:var(--card);border-radius:14px;box-shadow:var(--shadow);padding:12px 14px;margin-bottom:10px;overflow-wrap:anywhere}
+.akh{font-size:12px;font-weight:800;color:var(--sub);margin-bottom:8px}
+.aktitle{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap} .aktitle b{font-size:21px;font-weight:800} .aktitle span{font-size:14px;color:var(--sub);font-weight:600}
+.aktags{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0 4px}
+.aktag{font-size:12px;font-weight:700;border-radius:7px;padding:2px 8px;background:var(--soft);color:var(--sub)}
+.akitem{font-size:15px;font-weight:600;margin-top:6px} .akstage{font-size:14px;color:var(--sub);margin-top:3px}
+.aknext{display:flex;align-items:flex-start;gap:10px} .aknt{flex:1;font-size:15px;line-height:1.45;white-space:pre-wrap}
+.akturnrow{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:13px;color:var(--sub);font-weight:700}
+.aklog{display:flex;gap:10px;padding:7px 0;border-top:1px solid var(--line);font-size:14px;line-height:1.45}
+.aklog:first-of-type{border-top:0}
+.aklt{flex:none;width:76px;color:var(--sub);font-size:12px;font-weight:700;font-variant-numeric:tabular-nums;padding-top:2px}
+.aklb{flex:1;min-width:0;white-space:pre-wrap} .aklb b{margin-right:6px;font-size:12px;color:var(--acc)}
+.akproof{font-size:12px;color:var(--sub);margin-top:2px}
+.aknone{color:var(--sub);font-size:14px}
+.aktext{font-size:15px;line-height:1.5;white-space:pre-wrap}
+.akpay{margin:0;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere}
+.aklinks{display:flex;flex-direction:column}
+.aklink{display:flex;align-items:flex-start;gap:10px;padding:9px 0;border-top:1px solid var(--line);color:var(--ink);text-decoration:none;min-width:0}
+.aklink:first-child{border-top:0}
+.aklink svg{flex:none;width:18px;height:18px;color:var(--acc);margin-top:2px}
+.aklink div{flex:1;min-width:0;display:flex;flex-direction:column}
+.aklink b{font-size:14px;font-weight:700} .aklink span{font-size:12px;color:var(--sub);overflow-wrap:anywhere}
+.aklink.code svg{color:var(--sub)} .akcode{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px!important;color:var(--ink)!important;-webkit-user-select:all;user-select:all}
+.akupd{font-size:11px;color:var(--sub);text-align:right;margin:2px 4px 8px}
 </style>
 </head>
 <body>
@@ -420,6 +497,7 @@ body.memoedit main{padding-bottom:calc(40px + env(safe-area-inset-bottom,0px))}
   <a href="#/cal" data-r="cal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="16" rx="3"/><path d="M3 9.5h18M8 3v3M16 3v3"/></svg>カレンダー</a>
   <a href="#/past" data-r="past"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v4h4"/><path d="M12 8v4l3 2"/></svg>やったこと</a>
   <a href="#/memo" data-r="memo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="3"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>メモ</a>
+  <a href="#/cases" data-r="cases"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>案件</a>
 </nav>
 <div id="sheet"></div>
 <script src="config.js"></script>

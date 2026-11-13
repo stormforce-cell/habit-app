@@ -43,8 +43,9 @@ function handle_(p) {
   try {
     ensure_();
     switch (p.action) {
-      case 'load': return out_({ ok: true, items: loadItems_(), records: loadRecords_(p.since),
-        events: readTable_(T.EV), life: loadLife_(), memos: readTable_(T.MEMO) });
+      case 'load': { const ak = loadAnken_();
+        return out_({ ok: true, items: loadItems_(), records: loadRecords_(p.since),
+          events: readTable_(T.EV), life: loadLife_(), memos: readTable_(T.MEMO), cases: ak.cases, caseLogs: ak.logs }); }
       case 'upsert': upsertRecord_(p); break;
       case 'saveItems': saveItems_(p.items || []); break;
       case 'saveEvent': upsertRow_(T.EV, p.item, v); break;
@@ -196,6 +197,25 @@ function upsertRow_(t, item, v) {
   const row = t.f.map(k => { let v2 = o[k] == null ? '' : String(o[k]); if (/^[=+\-@]/.test(v2)) v2 = "'" + v2; return v2; });
   if (r > 0) sh.getRange(r, 1, 1, row.length).setValues([row]);
   else sh.getRange(sh.getLastRow() + 1, 1, 1, row.length).setValues([row]);
+}
+
+/* ---------- 案件タブ（2026-11-13）：AIが「案件」「案件ログ」タブに書く。アプリは読むだけ ----------
+   タブが無ければ空。シートを作ったり書き込んだりはしない。進行中（状態が空）の案件と、そのログだけ返す */
+const AK_F = ['id', 'cat', 'sub', 'who', 'country', 'channel', 'item', 'stage', 'next', 'due', 'turn', 'note', 'pay', 'links', 'status', 'updated'];
+const AKL_F = ['caseId', 'at', 'text', 'by', 'proof'];
+function loadAnken_() {
+  const ss = SpreadsheetApp.getActive();
+  const read = (name, f) => {
+    const sh = ss.getSheetByName(name);
+    if (!sh) return [];
+    const n = sh.getLastRow() - 1;
+    if (n <= 0) return [];
+    return sh.getRange(2, 1, n, f.length).getDisplayValues().map(r => { const o = {}; f.forEach((k, j) => { o[k] = String(r[j] == null ? '' : r[j]); }); return o; });
+  };
+  const cases = read('案件', AK_F).filter(o => o.id.trim() && !o.status.trim());
+  const ids = {}; cases.forEach(o => { ids[o.id.trim()] = true; });
+  const logs = read('案件ログ', AKL_F).filter(o => ids[o.caseId.trim()]);
+  return { cases: cases, logs: logs };
 }
 
 /* ---------- 習慣・繰り返しの1行ずつの保存（v2：表ごと上書きしない） ---------- */
