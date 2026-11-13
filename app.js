@@ -79,18 +79,27 @@ function saveLocal(){
 }
 function setSync(s){ syncState=s; const d=$("syncdot"); if(d) d.className="sync"+(s==="ok"?"":s==="wait"?" wait":" err"); }
 
+// サーバー（Code.gs の upsertRow_）と同じ決まりで、手元の状態にも当てる
+//   v2：_fields があればその列だけ変える／_new・_create が無いのに行が無ければ作らない（消された行を復活させない）
 function applyOp(op){
   const p=op.p;
   if(op.a==="saveEvent"){
-    const i=S.events.findIndex(x=>x.id===p.item.id); const cur=i>=0?S.events[i]:null;
-    const it={}; Object.keys(p.item).forEach(k=>{ if(k[0]!=="_") it[k]=p.item[k]; });
+    const P=p.item, v2=(op.v||1)>=2;
+    const i=S.events.findIndex(x=>x.id===P.id); const cur=i>=0?S.events[i]:null;
+    const it={}; Object.keys(P).forEach(k=>{ if(k[0]!=="_") it[k]=P[k]; });
     if(cur){
-      if(p.item._create) return;                                   // もうあるなら作り直さない
-      if(p.item._ifUndone && cur.done) return;                      // 完了済みには触らない
-      if(cur.done && !it.done && !p.item._undo) it.done=cur.done;   // 古い送信で未完了に戻さない
-      S.events[i]=it;
-    } else S.events.push(it);
+      if(P._create) return;                                         // もうあるなら作り直さない
+      if(P._ifUndone && cur.done) return;                           // 完了済みには触らない
+      let nx=it;
+      if(v2 && Array.isArray(P._fields)){ nx={...cur}; P._fields.forEach(k=>{ if(k in it) nx[k]=it[k]; }); }
+      if(cur.done && !nx.done && !P._undo) nx.done=cur.done;        // 古い送信で未完了に戻さない
+      S.events[i]=nx;
+    } else if(!v2 || P._new || P._create) S.events.push(it);
   }
+  else if(op.a==="saveItemRow"){ const r=p.row; const i=S.items.findIndex(x=>x.id===r.id); if(i>=0) S.items[i]={...S.items[i],...r}; else S.items.push({...r}); S.items.sort((a,b)=>(a.order||0)-(b.order||0)); }
+  else if(op.a==="delItemRow"){ S.items=S.items.filter(x=>x.id!==p.id); }
+  else if(op.a==="saveLifeRow"){ const r=p.row; const i=S.life.findIndex(x=>x.id===r.id); if(i>=0) S.life[i]={...S.life[i],...r}; else S.life.push({...r}); S.life.sort((a,b)=>(a.order||0)-(b.order||0)); }
+  else if(op.a==="delLifeRow"){ S.life=S.life.filter(x=>x.id!==p.id); }
   else if(op.a==="delEvent"){ S.events=S.events.filter(x=>x.id!==p.id); }
   else if(op.a==="saveItems"){ S.items=p.items.slice(); }
   else if(op.a==="saveLife"){ S.life=p.life.slice(); }
@@ -99,43 +108,84 @@ function applyOp(op){
   else if(op.a==="upsert"){ const r={...(S.days[p.date]||{})}; if(p.mark) r[p.id]=p.mark; else if(!(r[p.id]==="o" && !p._undo)) delete r[p.id]; if(p.note) r["n_"+p.id]=p.note; else delete r["n_"+p.id]; S.days[p.date]=r; }
 }
 let flushTimer=null;
+const PROTO=2;
+// 同じタスクへの送信が溜まっていたら1つにまとめる（前の送信の「新規作成」などの意味を消さない）
+function mergeOp(o, n){
+  if(!o || o.a!=="saveEvent" || n.a!=="saveEvent" || (o.v||1)!==(n.v||1)) return n;
+  const a=o.p.item, b=n.p.item;
+  if(b._create && !a._create) return o;                 // 先に送る変更の方を残す（作るだけの送信は不要）
+  const m={...b};
+  if(a._create && !b._create){ m._new=true; delete m._create; }
+  else if(a._new) m._new=true;
+  if(!(a._create && !b._create)){
+    if(Array.isArray(a._fields) && Array.isArray(b._fields)) m._fields=[...new Set([...a._fields, ...b._fields])];
+    else if(!a._create) delete m._fields;
+  }
+  if(!(a._ifUndone && b._ifUndone)) delete m._ifUndone;
+  if(a._undo && !b.done) m._undo=true;
+  return {...n, p:{...n.p, item:m}};
+}
 function queue(k, a, p){
-  const op={k,a,p};
+  let op={k,a,p,v:PROTO};
+  const old=pending.find(x=>x.k===k);
+  if(old) op=mergeOp(old, op);
   pending = pending.filter(x=>x.k!==k); pending.push(op);
-  applyOp(op); saveLocal(); setSync("wait");
+  applyOp({...op, p}); saveLocal(); setSync("wait");
   clearTimeout(flushTimer); flushTimer=setTimeout(flush, 500);
 }
+// 通信が途中で止まっても固まらないように、必ず時間で打ち切る（スマホを閉じた・PCがスリープした等）
+const NET_TIMEOUT=30000;
+async function fetchT(url, opt={}){
+  const ac = typeof AbortController!=="undefined" ? new AbortController() : null;
+  const t = setTimeout(()=>{ if(ac) ac.abort(); }, NET_TIMEOUT);
+  try{ return await fetch(url, {...opt, cache:"no-store", signal: ac? ac.signal : undefined}); }
+  finally{ clearTimeout(t); }
+}
+class ServerError extends Error { constructor(m, retry){ super(m); this.retry=!!retry; } }
 async function api(body){
-  const res = await fetch(CFG.API_URL, {method:"POST", body: JSON.stringify({...body, key: CFG.KEY})});
-  const j = await res.json();
-  if(!j.ok) throw new Error(j.error||"error");
+  let res, j;
+  try{ res = await fetchT(CFG.API_URL, {method:"POST", body: JSON.stringify({...body, key: CFG.KEY})}); j = await res.json(); }
+  catch(e){ throw new ServerError("network", true); }          // 圏外・タイムアウト・Googleのエラー画面 → あとでもう一度
+  if(!j.ok) throw new ServerError(j.error||"error", !!j.retry || j.error==="busy");
   return j;
 }
-let flushing=false;
+let flushing=false, flushStarted=0;
 async function flush(){
   if(!ONLINE){ setSync("err"); return; }
-  if(flushing) return; flushing=true;
+  if(flushing && Date.now()-flushStarted < NET_TIMEOUT*2+5000) return;   // 念のため：固まっていたら引き継ぐ
+  flushing=true; flushStarted=Date.now();
+  const me=flushStarted;
   try{
-    while(pending.length){
+    let skipped=0;
+    while(pending.length && skipped<pending.length){
+      if(flushStarted!==me) return;
       const op=pending[0];
-      try{ await api({action:op.a, ...op.p}); lastSentAt=Date.now(); }
-      catch(e){ setSync("err"); setTimeout(flush, 15000); return; }
-      pending = pending.filter(x=>x!==op);
+      try{ await api({action:op.a, ...op.p, v:op.v||1}); lastSentAt=Date.now(); pending = pending.filter(x=>x!==op); }
+      catch(e){
+        if(e.retry){ setSync("err"); setTimeout(flush, 15000); return; }
+        // サーバーが受け付けない送信は、後ろに回してほかの送信を先に通す（1つの失敗で全部止めない）。5回失敗したら捨てる
+        op.fails=(op.fails||0)+1;
+        pending = pending.filter(x=>x!==op);
+        if(op.fails<5){ pending.push(op); skipped++; }
+        else console.warn("送れなかった変更を捨てた", op, e.message);
+      }
       saveLocal();
     }
-    setSync("ok");
-    uploadImages();
-  } finally { flushing=false; }
+    if(pending.length){ setSync("err"); setTimeout(flush, 15000); }
+    else { setSync("ok"); uploadImages(); }
+  } finally { if(flushStarted===me) flushing=false; }
 }
-let lastLoad=0, lastSentAt=0;
+let lastLoad=0, lastSentAt=0, pulling=0;
 async function pull(){
   const t0=Date.now();
   if(!ONLINE){ setSync("err"); dailyMaintenance(); update(); return; }
+  if(pulling && t0-pulling < NET_TIMEOUT+5000) return;
+  pulling=t0;
   try{
-    const url = CFG.API_URL+"?action=load&key="+encodeURIComponent(CFG.KEY)+"&since="+dayAt(-120);
-    const j = await (await fetch(url)).json();
+    const url = CFG.API_URL+"?action=load&key="+encodeURIComponent(CFG.KEY)+"&since="+dayAt(-120)+"&_="+t0;
+    const j = await (await fetchT(url)).json();
     if(!j.ok) throw new Error(j.error);
-    if(lastSentAt>t0 || flushing){ setTimeout(pull, 1500); return; }   // 読み込み中に送った分が入っていない古い結果なので読み直す
+    if(lastSentAt>t0 || flushing){ pulling=0; setTimeout(pull, 1500); return; }   // 読み込み中に送った分が入っていない古い結果なので読み直す
     const days={};
     (j.records||[]).forEach(r=>{ days[r.date]=days[r.date]||{}; if(r.mark) days[r.date][r.id]=r.mark; if(r.note) days[r.date]["n_"+r.id]=r.note; });
     S.days=days; S.events=j.events||[]; S.life=j.life||[]; S.memos=j.memos||[];
@@ -149,6 +199,7 @@ async function pull(){
     if(!drag) update();
     flush();
   }catch(e){ setSync("err"); }
+  finally{ if(pulling===t0) pulling=0; }
 }
 
 /* ================= タスクのヘルパー ================= */
@@ -175,15 +226,15 @@ const stepNo = e => Number(e.steps)||0;
 const caseHeader = cid => S.events.find(e=>e.id===cid && isCase(e));
 function caseSteps(cid){ return S.events.filter(e=>e.rule==="c:"+cid && !isSkip(e)).sort((a,b)=>stepNo(a)-stepNo(b)); }
 function curStep(cid){ return caseSteps(cid).find(e=>!e.done); }
-function isCurrent(e){ if(!isStep(e)) return true; const c=curStep(caseIdOf(e)); return !!c && c.id===e.id; }
+function isCurrent(e){ if(!isStep(e)) return true; const h=caseHeader(caseIdOf(e)); if(h && h.done) return false; const c=curStep(caseIdOf(e)); return !!c && c.id===e.id; }
 function openCases(){ return S.events.filter(e=>isCase(e) && !e.done); }
 function holds(){ const T=todayKey(); return openCases().map(h=>({h, s:curStep(h.id)})).filter(x=>x.s && isWait(x.s) && (!x.s.date || x.s.date>T)); }
 function ensureCases(){
   const T=todayKey();
   S.events.filter(isCase).forEach(h=>{
     const st=caseSteps(h.id);
-    if(!h.done && st.length && st.every(s=>s.done)){ saveEv({...h, done:stamp()}); return; }
-    if(h.done && st.some(s=>!s.done)){ saveEv({...h, done:""}); }
+    if(h.done) return;   // 完了した案件は勝手に開け直さない（ステップを戻したときだけ toggleDone で開け直す）
+    if(st.length && st.every(s=>s.done)){ saveEv({...h, done:stamp()}); return; }
     const c=st.find(s=>!s.done);
     if(c && !isWait(c) && !c.date) saveEv({...c, date:T, order:nextOrder(T)}, {ifUndone:true});
   });
@@ -199,10 +250,18 @@ const bnRange = () => { const s=toMin(bnStart()); return [s, Math.min(s+120, 143
 const hmOf = m => pad(Math.floor(m/60))+":"+pad(m%60);
 const on = k => S.events.filter(e=>e.date===k && !isSkip(e) && !isCase(e) && (!isStep(e) || e.done || isCurrent(e)));
 // opt.create：無いときだけ作る／opt.ifUndone：未完了のときだけ変える。完了を外すときは自動で _undo を付ける
+// 変えた列だけを送る（古い画面のまま操作しても、ほかの端末やAIが変えた列を上書きしない）
+const EV_F=["date","start","end","title","tag","note","color","done","steps","order","rule","carried"];
 function saveEv(e, opt={}){
-  const prev=S.events.find(x=>x.id===e.id); const item={...e};
-  if(prev && prev.done && !item.done) item._undo=true;
-  if(opt.create) item._create=true;
+  const prev=S.events.find(x=>x.id===e.id); const item={};
+  Object.keys(e).forEach(k=>{ if(k[0]!=="_") item[k]=e[k]; });
+  if(opt.create){ item._create=true; }
+  else if(prev){
+    const f=EV_F.filter(k=>String(item[k]==null?"":item[k])!==String(prev[k]==null?"":prev[k]));
+    if(!f.length) return;
+    item._fields=f;
+    if(prev.done && !item.done) item._undo=true;
+  } else item._new=true;
   if(opt.ifUndone) item._ifUndone=true;
   queue("ev|"+e.id,"saveEvent",{item});
 }
@@ -214,7 +273,7 @@ function toggleDone(e, ev){
   saveEv({...e, done:nd});
   if(isHabit(e)){ const h=habitOf(e); queue("rec|"+e.date+"|"+e.rule.slice(2),"upsert",{date:e.date,id:e.rule.slice(2),name:h?h.name:e.title,mark:nd?"o":"",note:e.note||"",_undo:!nd}); }
   if(nd && navigator.vibrate) navigator.vibrate(8);
-  if(isStep(e)) ensureCases();
+  if(isStep(e)){ if(!nd){ const h=caseHeader(caseIdOf(e)); if(h && h.done) saveEv({...h, done:""}); } ensureCases(); }
   update();
   if(nd) setTimeout(celebrate, 350);
 }
@@ -622,7 +681,7 @@ function openItem(id, preset={}){
       const items=S.items.slice(); const i=items.findIndex(x=>x.id===hid);
       const def={id:hid, name:(h&&h.name)||then, ifText:ifv, thenText:then, freq};
       if(i>=0) items[i]={...items[i],...def}; else items.push(def);
-      queue("items","saveItems",{items});
+      saveItemsList(items);
       if(oldKind==="rule") saveLife(S.life.filter(x=>x.id!==ru.id));
       item.title=(h&&h.name)||then;
       if(oldKind!=="habit"){ if(ex) queue("ev|"+ex.id,"delEvent",{id:ex.id}); item={...item, id:habitInst(hid,item.date), rule:"h:"+hid}; }
@@ -631,10 +690,10 @@ function openItem(id, preset={}){
       const def={id:rid, name:title, tag:item.tag, kind:rep, every, weekdays:WDN.filter(d=>wds.has(d)).join(","), note:item.note};
       const list=S.life.slice(); const i=list.findIndex(x=>x.id===rid); if(i>=0) list[i]={...list[i],...def}; else list.push(def);
       saveLife(list);
-      if(oldKind==="habit") queue("items","saveItems",{items:S.items.filter(x=>x.id!==h.id)});
+      if(oldKind==="habit") saveItemsList(S.items.filter(x=>x.id!==h.id));
       if(oldKind!=="rule"){ if(ex) queue("ev|"+ex.id,"delEvent",{id:ex.id}); item={...item, id:ruleInst(rid,item.date), rule:rid}; }
     } else {
-      if(oldKind==="habit") queue("items","saveItems",{items:S.items.filter(x=>x.id!==h.id)});
+      if(oldKind==="habit") saveItemsList(S.items.filter(x=>x.id!==h.id));
       if(oldKind==="rule") saveLife(S.life.filter(x=>x.id!==ru.id));
       item.rule="";
     }
@@ -643,7 +702,17 @@ function openItem(id, preset={}){
     closeSheet(); dailyMaintenance(); update();
   };
 }
-function saveLife(list){ queue("life","saveLife",{life:list.map((x,i)=>({...x, order:(i+1)*10}))}); }
+// 繰り返し・習慣は変わった行だけ送る（表ごと上書きすると、ほかの端末やAIが足した行が消える）
+function saveLife(list){
+  const next=list.map((x,i)=>({...x, order:(i+1)*10})), ids=new Set(next.map(x=>x.id));
+  S.life.filter(x=>!ids.has(x.id)).forEach(x=>queue("life|"+x.id,"delLifeRow",{id:x.id}));
+  next.forEach(x=>{ const o=S.life.find(y=>y.id===x.id); if(!o || JSON.stringify({...o,order:0})!==JSON.stringify({...x,order:0}) || Number(o.order)!==x.order) queue("life|"+x.id,"saveLifeRow",{row:x}); });
+}
+function saveItemsList(list){
+  const next=list.map((x,i)=>({...x, order:i+1})), ids=new Set(next.map(x=>x.id));
+  S.items.filter(x=>!ids.has(x.id)).forEach(x=>queue("item|"+x.id,"delItemRow",{id:x.id}));
+  next.forEach(x=>{ const o=S.items.find(y=>y.id===x.id); if(!o || o.name!==x.name || o.ifText!==x.ifText || o.thenText!==x.thenText || o.freq!==x.freq || Number(o.order||0)!==x.order) queue("item|"+x.id,"saveItemRow",{row:x}); });
+}
 
 /* ================= 案件シート ================= */
 function openCase(cid, preset={}){
@@ -1120,11 +1189,11 @@ function viewMemoEdit(app, id){
 /* ================= 起動 ================= */
 window.addEventListener("online", flush);
 let lastDay=todayKey();
-function onShow(){ if(document.visibilityState!=="visible") return; flush(); if(lastDay!==todayKey()){ lastDay=todayKey(); if(ONLINE){ pull(); } else { dailyMaintenance(); update(); } return; } if(Date.now()-lastLoad>20000) pull(); }
+function onShow(){ if(document.visibilityState!=="visible") return; flush(); if(lastDay!==todayKey()){ lastDay=todayKey(); if(ONLINE){ pull(); } else { dailyMaintenance(); update(); } return; } if(Date.now()-lastLoad>5000) pull(); }
 document.addEventListener("visibilitychange", onShow);
 window.addEventListener("focus", onShow);
 window.addEventListener("pageshow", onShow);
-setInterval(()=>{ if(document.visibilityState==="visible" && !drag && !$("sheet").innerHTML && document.activeElement.tagName!=="INPUT"){ if(Date.now()-lastLoad>55000) pull(); else update(); } }, 60000);
+setInterval(()=>{ if(document.visibilityState==="visible" && !drag && !$("sheet").innerHTML && !/INPUT|TEXTAREA/.test(document.activeElement.tagName)){ if(Date.now()-lastLoad>25000) pull(); else update(); } if(pending.length && !flushing) flush(); }, 30000);
 document.addEventListener("touchmove", ev=>{ if(drag) ev.preventDefault(); }, {passive:false});
 document.addEventListener("contextmenu", ev=>{ if(ev.target.closest(".row")) ev.preventDefault(); });
 loadLocal(); parseRoute(); if(!location.hash) history.replaceState(null,"","#/todo");

@@ -37,7 +37,9 @@ function doPost(e) {
 function handle_(p) {
   if (p.key !== KEY) return out_({ ok: false, error: 'bad key' });
   const lock = LockService.getScriptLock();
-  lock.waitLock(15000);
+  // 混んでいて順番が回ってこないときは「あとでもう一度」と返す（エラー画面にしない）
+  if (!lock.tryLock(25000)) return out_({ ok: false, error: 'busy', retry: true });
+  const v = Number(p.v) || 1;   // v2 以降：変えた列だけ書く／消えた行は作り直さない
   try {
     ensure_();
     switch (p.action) {
@@ -45,7 +47,11 @@ function handle_(p) {
         events: readTable_(T.EV), life: loadLife_(), memos: readTable_(T.MEMO) });
       case 'upsert': upsertRecord_(p); break;
       case 'saveItems': saveItems_(p.items || []); break;
-      case 'saveEvent': upsertRow_(T.EV, p.item); break;
+      case 'saveEvent': upsertRow_(T.EV, p.item, v); break;
+      case 'saveItemRow': upsertSimple_(T.SET, itemRow_(p.row)); break;
+      case 'delItemRow': deleteRow_(T.SET, p.id); break;
+      case 'saveLifeRow': upsertSimple_(T.LIFE, lifeRow_(p.row)); break;
+      case 'delLifeRow': deleteRow_(T.LIFE, p.id); break;
       case 'saveMemo': upsertRow_(T.MEMO, p.memo); break;
       case 'delMemo': deleteRow_(T.MEMO, p.id); break;
       case 'saveImage': saveImage_(p.id, p.mime, p.data); break;
@@ -56,7 +62,7 @@ function handle_(p) {
     }
     return out_({ ok: true });
   } catch (err) {
-    return out_({ ok: false, error: String(err) });
+    return out_({ ok: false, error: String(err), retry: /timed out|time|service|quota|サービス|時間/i.test(String(err)) });
   } finally {
     lock.releaseLock();
   }
@@ -97,7 +103,8 @@ function sheet_(t) {
 
 /* ---------- 形式の正規化（AIが書いた行も読めるように） ---------- */
 function tz_() { return SpreadsheetApp.getActive().getSpreadsheetTimeZone(); }
-function now_() { return Utilities.formatDate(new Date(), tz_(), 'yyyy-MM-dd HH:mm'); }
+// 記録する時刻は必ず日本時間（シートのタイムゾーン設定に左右されない）
+function now_() { return Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd HH:mm'); }
 function ymd_(v) {
   if (v instanceof Date) return Utilities.formatDate(v, tz_(), 'yyyy-MM-dd');
   const m = String(v || '').trim().replace(/[\/.年月]/g, '-').match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
@@ -154,23 +161,58 @@ function findRow_(sh, id) {
 // 古い送信（別の端末に溜まっていたもの）で、完了した行を未完了に戻さない。
 //   item._create：無いときだけ作る（毎日の分）／item._ifUndone：未完了のときだけ変える（持ち越し・次のステップ）
 //   item._undo：本人が完了を外した（これが無いと「完了」は空で上書きされない）
-function upsertRow_(t, item) {
+// v2（2026-11-13〜）：
+//   item._fields：変えた列の名前の一覧。あればその列だけ書く（ほかの端末やAIが変えた列を古い値で上書きしない）
+//   item._new：新しく作ったタスク。無いときは作る
+//   _new も _create も無い送信で行が無い（＝ほかの端末やAIが消した）ときは、作り直さない（消したタスクの復活を防ぐ）
+//   タイトルが空の行（AIがID以外を消した行）は「無い」とみなす
+function upsertRow_(t, item, v) {
   if (!item || !item.id) throw new Error('id required');
+  v = v || 1;
   const sh = sheet_(t);
   const r = findRow_(sh, item.id);
   let o = Object.assign({}, item);
-  if (r > 0 && t === T.EV) {
-    if (item._create) return;
-    const cur = sh.getRange(r, 1, 1, t.f.length).getDisplayValues()[0];
-    const curDone = String(cur[t.f.indexOf('done')] || '').trim();
-    if (item._ifUndone && curDone) return;
-    if (curDone && !String(item.done || '').trim() && !item._undo) o.done = curDone;
+  if (t === T.EV) {
+    const cur = r > 0 ? sh.getRange(r, 1, 1, t.f.length).getDisplayValues()[0] : null;
+    const alive = !!(cur && String(cur[t.f.indexOf('title')] || '').trim());
+    if (alive) {
+      if (item._create) return;
+      const curDone = String(cur[t.f.indexOf('done')] || '').trim();
+      if (item._ifUndone && curDone) return;
+      if (v >= 2 && Array.isArray(item._fields)) {
+        const base = {};
+        t.f.forEach((k, j) => { base[k] = cur[j]; });
+        item._fields.forEach(k => { if (t.f.indexOf(k) >= 0 && k !== 'id' && k !== 'updated') base[k] = item[k]; });
+        o = base;
+      }
+      if (curDone && !String(o.done || '').trim() && !item._undo) o.done = curDone;
+    } else if (v >= 2 && !item._new && !item._create) {
+      return;   // 消された行は作り直さない
+    }
   }
+  Object.keys(o).forEach(k => { if (k[0] === '_') delete o[k]; });
   o = norm_(t, o);
   o.updated = (t === T.MEMO && item.updated) ? item.updated : now_();
-  const row = t.f.map(k => { let v = o[k] == null ? '' : String(o[k]); if (/^[=+\-@]/.test(v)) v = "'" + v; return v; });
+  const row = t.f.map(k => { let v2 = o[k] == null ? '' : String(o[k]); if (/^[=+\-@]/.test(v2)) v2 = "'" + v2; return v2; });
   if (r > 0) sh.getRange(r, 1, 1, row.length).setValues([row]);
   else sh.getRange(sh.getLastRow() + 1, 1, 1, row.length).setValues([row]);
+}
+
+/* ---------- 習慣・繰り返しの1行ずつの保存（v2：表ごと上書きしない） ---------- */
+function itemRow_(x) {
+  if (!x || !x.id) throw new Error('id required');
+  return [String(x.id), x.name || '', x.ifText || '', x.thenText || '', x.freq === 'weekly' ? '週1' : '毎日', String(x.order || '')];
+}
+function lifeRow_(x) {
+  if (!x || !x.id) throw new Error('id required');
+  return [String(x.id), x.name || '', x.tag || '', x.kind === 'weekly' ? '曜日' : '間隔', x.kind === 'weekly' ? '' : String(x.every || 7),
+    x.kind === 'weekly' ? (x.weekdays || '') : '', x.note || '', String(x.order || '')];
+}
+function upsertSimple_(t, row) {
+  const sh = sheet_(t);
+  const r = findRow_(sh, row[0]);
+  const rng = r > 0 ? sh.getRange(r, 1, 1, row.length) : sh.getRange(sh.getLastRow() + 1, 1, 1, row.length);
+  rng.setNumberFormat('@').setValues([row]);
 }
 
 /* ---------- 画像（メモに貼る。1行45,000文字ずつに分けて保存） ---------- */
@@ -257,9 +299,9 @@ function loadItems_() {
   const n = sh.getLastRow() - 1;
   if (n <= 0) return null;
   return sh.getRange(2, 1, n, 6).getValues()
-    .filter(r => r[0] !== '')
-    .sort((a, b) => a[5] - b[5])
-    .map(r => ({ id: String(r[0]), name: String(r[1]), ifText: String(r[2]), thenText: String(r[3]), freq: r[4] === '週1' ? 'weekly' : 'daily' }));
+    .filter(r => r[0] !== '' && String(r[1]) !== '')
+    .sort((a, b) => (Number(a[5]) || 0) - (Number(b[5]) || 0))
+    .map(r => ({ id: String(r[0]), name: String(r[1]), ifText: String(r[2]), thenText: String(r[3]), freq: r[4] === '週1' ? 'weekly' : 'daily', order: Number(r[5]) || 0 }));
 }
 
 function saveItems_(items) {

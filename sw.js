@@ -1,5 +1,5 @@
 // 常にネットの最新版を優先（フォルダを変えたら即反映）。圏外のときだけ保存版を使う。
-const CACHE = "habit-v1";
+const CACHE = "habit-v2";
 self.addEventListener("install", e => self.skipWaiting());
 self.addEventListener("activate", e => e.waitUntil(self.clients.claim()));
 self.addEventListener("fetch", e => {
